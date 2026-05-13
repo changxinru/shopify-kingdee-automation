@@ -1,0 +1,8 @@
+payment_method,sales_org,payment_owner
+PayPal Express Checkout,XGSG,香港
+Shopify Payments,MGSG,美国
+Shopify Payments + Airwallex - Cards and Local Payment Methods,MGSG,美国
+Airwallex - Cards and Local Payment Methods,XGSG,香港
+Shopify Payments + PayPal Express Checkout,MGSG,美国
+Shop Cash + Shopify Payments,MGSG,美国
+Airwallex - Cards and Local Payment Methods + Shopify Payments,MGSG,美国

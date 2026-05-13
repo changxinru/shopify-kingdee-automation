@@ -1,0 +1,14 @@
+{
+  "name": "shopify-kingdee-automation",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node src/transform-shopify.js",
+    "sync": "node src/sync.js",
+    "test:shopify": "node src/test-shopify.js"
+  },
+  "dependencies": {
+    "csv-parser": "latest",
+    "json2csv": "latest"
+  }
+}
