@@ -1,6 +1,15 @@
 const { formatPaymentDisplayNames } = require("./payment-display");
 const { normalizeOrderKey } = require("./feishu-sheets");
-const { lineSku, lineOrderedQuantity, lineCurrentQuantity, lineDiscountedTotalForComboSplit, computeFeishuEUnitPrice } = require("./shopify-orders");
+const {
+  lineSku,
+  lineOrderedQuantity,
+  lineCurrentQuantity,
+  lineDiscountedTotalForComboSplit,
+  computeFeishuEUnitPrice,
+  orderProductPoolAfterShipping,
+  scaleFactorLineTotalsToOrderTotal,
+  roundMoney2,
+} = require("./shopify-orders");
 
 const {
   CUSTOMER_CODE,
@@ -42,23 +51,36 @@ function buildOutputLinesFromOrder(order, maps) {
   const outputLines = [];
   const lineEdges = order.lineItems?.edges ?? [];
 
+  const activeLines = [];
   for (let lineItemIndex = 0; lineItemIndex < lineEdges.length; lineItemIndex++) {
     const lineNode = lineEdges[lineItemIndex].node;
-    const lineItemId = normalize(lineNode?.id);
-    const originalSku = lineSku(lineNode);
     const orderedQty = lineOrderedQuantity(lineNode);
     const currentQty = lineCurrentQuantity(lineNode);
-
     if (orderedQty !== currentQty) {
       const tail = currentQty <= 0 ? "，已跳过旧商品。" : "。";
+      const originalSkuLog = lineSku(lineNode);
       console.log(
-        `订单 ${orderName} 的 SKU ${originalSku || "(空)"} 已编辑，quantity=${orderedQty}，currentQuantity=${currentQty}${tail}`,
+        `订单 ${orderName} 的 SKU ${originalSkuLog || "(空)"} 已编辑，quantity=${orderedQty}，currentQuantity=${currentQty}${tail}`,
       );
     }
-
     if (currentQty <= 0) continue;
+    const rawTotal = lineDiscountedTotalForComboSplit(lineNode, currentQty);
+    activeLines.push({ lineItemIndex, lineNode, orderedQty, currentQty, rawLineTotal: rawTotal });
+  }
 
-    const lineTotal = lineDiscountedTotalForComboSplit(lineNode, currentQty);
+  const sumLine = activeLines.reduce((s, row) => {
+    const v = row.rawLineTotal;
+    return s + (Number.isFinite(v) && v > 0 ? v : 0);
+  }, 0);
+  const moneyScale = scaleFactorLineTotalsToOrderTotal(order, sumLine);
+  const pool = orderProductPoolAfterShipping(order);
+
+  for (const { lineItemIndex, lineNode, orderedQty, currentQty, rawLineTotal } of activeLines) {
+    const lineItemId = normalize(lineNode?.id);
+    const originalSku = lineSku(lineNode);
+
+    const lineTotal =
+      Number.isFinite(rawLineTotal) && rawLineTotal > 0 ? roundMoney2(rawLineTotal * moneyScale) : rawLineTotal || 0;
     const lineFallbackUnit = computeFeishuEUnitPrice(lineNode, currentQty);
 
     const errors = [];
@@ -108,10 +130,13 @@ function buildOutputLinesFromOrder(order, maps) {
       const rawOrigU = lineNode?.originalUnitPriceSet?.shopMoney?.amount ?? "";
       const rawDiscU = lineNode?.discountedUnitPriceAfterAllDiscountsSet?.shopMoney?.amount ?? "";
       const rawDiscT = lineNode?.discountedTotalSet?.shopMoney?.amount ?? "";
+      const rawOrderTotal = order?.currentTotalPriceSet?.shopMoney?.amount ?? "";
+      const rawShip = order?.totalShippingPriceSet?.shopMoney?.amount ?? "";
       const pricingLog =
         `[pricing] 订单号=${orderName} SKU=${originalSku || "(空)"} quantity=${orderedQty} currentQuantity=${currentQty} ` +
         `originalUnitPrice=${rawOrigU} discountedUnitPriceAfterAllDiscounts=${rawDiscU} discountedTotalWithCodeDiscounts=${rawDiscT} ` +
-        `最终写入飞书E列单价=${item.unitPrice}`;
+        `currentTotal(Total)=${rawOrderTotal} shipping=${rawShip} pool=${Number.isFinite(pool) ? pool : ""} lineSum=${sumLine} scale=${moneyScale} ` +
+        `行折后总额(含税分摊)=${lineTotal} 最终写入飞书E列单价=${item.unitPrice}`;
 
       let syncKey = "";
 

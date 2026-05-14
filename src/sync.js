@@ -61,6 +61,25 @@ function formatSyncDate() {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/**
+ * 飞书/Excel 日期序列数（与 Excel 1900 日期系一致：1899-12-30 为 0 天），写入 A 列可避免「以文本储存的日期」。
+ * 使用本地日历的年月日。
+ */
+function excelDateSerialLocal(d = new Date()) {
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const day = d.getDate();
+  const epoch = Date.UTC(1899, 11, 30);
+  const t = Date.UTC(y, m, day);
+  const serial = (t - epoch) / 86400000;
+  return Math.round(serial * 100000) / 100000;
+}
+
+function feishuNumericCell(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function orderDisplayName(name) {
   return normalizeOrderKey(name) || String(name ?? "").trim();
 }
@@ -267,17 +286,17 @@ function writeLocalOutputs(allLinesForCsv) {
   fs.writeFileSync(path.join(OUTPUT_DIR, "warehouse-notices.txt"), warehouseNotices, "utf-8");
 }
 
-function linesToFeishuRows(lines, syncDateStr) {
+function linesToFeishuRows(lines, syncDateSerial) {
   const af = [];
   const uCol = [];
   for (const line of lines) {
     af.push([
-      syncDateStr,
+      syncDateSerial,
       line.order_name,
       line.product_name_for_check,
       line.payment_method,
-      line.unit_price,
-      line.quantity,
+      feishuNumericCell(line.unit_price),
+      feishuNumericCell(line.quantity),
     ]);
     uCol.push([line.logistics_provider]);
   }
@@ -372,13 +391,13 @@ async function tryMergeLogisticsProviderForNewRows(feishuToken, spreadsheetToken
   }
 }
 
-async function writeNewLines(feishuToken, spreadsheetToken, sheetRef, lines, syncDateStr, startRow) {
+async function writeNewLines(feishuToken, spreadsheetToken, sheetRef, lines, syncDateSerial, startRow) {
   if (!lines.length) return 0;
   const endRow = startRow + lines.length - 1;
   lines.forEach((line, index) => {
     line.feishu_row = startRow + index;
   });
-  const { af, uCol } = linesToFeishuRows(lines, syncDateStr);
+  const { af, uCol } = linesToFeishuRows(lines, syncDateSerial);
 
   await safeBatchUpdateValues(feishuToken, spreadsheetToken, [
     { range: `${sheetRef}!A${startRow}:F${endRow}`, values: af },
@@ -459,7 +478,10 @@ async function main() {
     existingOrderKeys.has(normalizeOrderKey(o.name)),
   ).length;
 
-  const syncDateStr = formatSyncDate();
+  const syncDateSerial = excelDateSerialLocal();
+  console.log(
+    `同步日期：${formatSyncDate()}（A 列写入日期序列数 ${syncDateSerial}；列格式设为「日期」后显示为年月日；E/F 列为数字）`,
+  );
   const newLines = [];
   let skippedByOrderNameCount = 0;
   const sortedOrders = [...eligibleOrders].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -522,7 +544,7 @@ async function main() {
     for (const line of newLines) {
       if (line._pricing_log) console.log(line._pricing_log);
     }
-    const written = await writeNewLines(feishuToken, spreadsheetToken, sheetRef, newLines, syncDateStr, startRow);
+    const written = await writeNewLines(feishuToken, spreadsheetToken, sheetRef, newLines, syncDateSerial, startRow);
     summary.created = newRowCount;
     summary.writtenRows += written;
 

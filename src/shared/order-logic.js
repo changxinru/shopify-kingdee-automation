@@ -160,6 +160,9 @@ function splitProducts({ product1, product2, lineDiscountedTotal, quantity = 1, 
   }
 
   if (!product2) {
+    if (Number.isFinite(d) && d > 0) {
+      return [{ productName: product1, unitPrice: d / qty }];
+    }
     const li = parseNumber(lineitemPrice);
     if (Number.isFinite(li) && li > 0) return [{ productName: product1, unitPrice: li }];
     return [{ productName: product1, unitPrice: perUnitForSplit }];

@@ -30,6 +30,12 @@ const ORDERS_QUERY = `
               currencyCode
             }
           }
+          totalShippingPriceSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
           email
           phone
           shippingAddress {
@@ -265,6 +271,31 @@ function lineDiscountedTotalForComboSplit(lineNode, currentQty) {
   return 0;
 }
 
+/** 订单「商品侧」应付池：与后台 Total 一致，为 currentTotalPriceSet 减运费（税费等差额通过 scale 摊回行金额） */
+function orderProductPoolAfterShipping(order) {
+  const total = parseMoneyAmount(order, [(n) => n?.currentTotalPriceSet?.shopMoney?.amount]);
+  const ship = parseMoneyAmount(order, [(n) => n?.totalShippingPriceSet?.shopMoney?.amount]);
+  if (!Number.isFinite(total) || total <= 0) return NaN;
+  const s = Number.isFinite(ship) && ship > 0 ? ship : 0;
+  return Math.max(0, total - s);
+}
+
+/**
+ * 行折后小计之和 与 订单 Total−运费 不一致时（多为税费），按比例调整行金额，使飞书 E 列与顾客实付对齐。
+ */
+function scaleFactorLineTotalsToOrderTotal(order, sumLineDiscountedTotals) {
+  const pool = orderProductPoolAfterShipping(order);
+  const sum = sumLineDiscountedTotals;
+  if (!Number.isFinite(pool) || pool <= 0 || !Number.isFinite(sum) || sum <= 0) return 1;
+  if (Math.abs(pool - sum) < 0.005) return 1;
+  return pool / sum;
+}
+
+function roundMoney2(n) {
+  if (!Number.isFinite(n)) return n;
+  return Math.round(n * 100) / 100;
+}
+
 module.exports = {
   SHOPIFY_API_VERSION,
   PAID_ORDERS_QUERY,
@@ -277,4 +308,7 @@ module.exports = {
   lineDiscountedTotalWithCodeDiscounts,
   lineDiscountedTotalForComboSplit,
   computeFeishuEUnitPrice,
+  orderProductPoolAfterShipping,
+  scaleFactorLineTotalsToOrderTotal,
+  roundMoney2,
 };
