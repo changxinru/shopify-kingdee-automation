@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node src/transform-shopify.js",
     "sync": "node src/sync.js",
-    "test:shopify": "node src/test-shopify.js"
+    "prepare:kingdee": "node src/prepare-kingdee-from-feishu.js",
+    "test:shopify": "node src/test-shopify.js",
+    "test:kingdee": "node src/test-kingdee.js"
   },
   "dependencies": {
     "csv-parser": "latest",

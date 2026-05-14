@@ -27,7 +27,13 @@ function readCsv(fileName) {
     const rows = [];
     fs.createReadStream(path.join(DATA_DIR, fileName))
       .pipe(csv())
-      .on("data", (row) => rows.push(row))
+      .on("data", (row) => {
+        const cleaned = {};
+        for (const [k, v] of Object.entries(row)) {
+          cleaned[String(k).replace(/^\ufeff/, "").trim()] = v;
+        }
+        rows.push(cleaned);
+      })
       .on("end", () => resolve(rows))
       .on("error", reject);
   });
@@ -143,6 +149,7 @@ async function main() {
       const usPayment = isUsPaymentCollection(paymentOwner, salesOrgVal);
       const actualShipStockOrg = fulfillment.stockOrg;
       const salesOrderStockOrg = usPayment ? "XGSG" : actualShipStockOrg;
+      const needTransferForUsPayment = usPayment && normalize(actualShipStockOrg) === "SZSG";
 
       outputLines.push({
         order_name: orderName,
@@ -159,9 +166,9 @@ async function main() {
         actual_ship_stock_org: actualShipStockOrg,
         sales_order_stock_org: salesOrderStockOrg,
         stock_org: salesOrderStockOrg,
-        transfer_required: usPayment ? "yes" : "no",
-        transfer_from_stock_org: usPayment ? "SZSG" : "",
-        transfer_to_stock_org: usPayment ? "XGSG" : "",
+        transfer_required: needTransferForUsPayment ? "yes" : "no",
+        transfer_from_stock_org: needTransferForUsPayment ? "SZSG" : "",
+        transfer_to_stock_org: needTransferForUsPayment ? "XGSG" : "",
         shipping_country: country,
         shipping_province: province,
         receiver_name: receiverName,

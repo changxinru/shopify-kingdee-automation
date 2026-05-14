@@ -54,6 +54,7 @@ const COUNTRY_KEY_TO_LOGISTICS = (() => {
   add(["lt", "lithuania", "立陶宛"], "燕文新系统-燕文专线追踪-特货");
   add(["es", "spain", "西班牙"], "云途-云途全球专线挂号（特惠带电）");
   add(["sg", "singapore", "新加坡"], "视感4PX-4PX-S邮速递");
+  add(["se", "sweden", "瑞典"], "云途-云途全球专线挂号（特惠带电）");
   add(["mx", "mexico", "墨西哥"], "燕文新系统-燕文专线追踪-特货");
   add(["be", "belgium", "比利时"], "云途-云途全球专线挂号（特惠带电）");
   add(["sk", "slovakia", "斯洛伐克共和国", "slovak republic"], "云途-云途全球专线挂号（特惠带电）");
@@ -201,7 +202,16 @@ function findCountryShippingService(countryMaps, country) {
 }
 
 function findProviderByService(providerMaps, logisticsService) {
-  return providerMaps.find((item) => logisticsService.includes(item.provider_keyword));
+  const svc = normalize(logisticsService);
+  if (!svc) return undefined;
+  const bySubstring = providerMaps.find((item) => {
+    const kw = normalize(item.provider_keyword ?? "");
+    return kw && svc.includes(kw);
+  });
+  if (bySubstring) return bySubstring;
+  const short = extractShortCarrier(svc);
+  if (!short || short === "待人工确认") return undefined;
+  return providerMaps.find((item) => normalize(item.provider_keyword ?? "") === short);
 }
 
 function resolveNonUsLogisticsService(countryName, countryCode) {
@@ -238,7 +248,7 @@ function resolveFulfillment({ country, countryCode, originalSku, productName, co
 
   if (isUsCountry(country, countryCode)) {
     if (US_WINIT_SKUS.has(skuKey)) {
-      const full = "Winit海外仓（USKY3美东）(香视)";
+      const full = "万邑";
       return {
         logisticsProvider: full,
         logisticsService: full,
@@ -289,14 +299,24 @@ function resolveFulfillment({ country, countryCode, originalSku, productName, co
   const shortCarrier = extractShortCarrier(logisticsService);
   const provider = findProviderByService(providerMaps, logisticsService);
   if (!provider) {
+    if (shortCarrier !== "待人工确认") {
+      return {
+        logisticsProvider: shortCarrier,
+        logisticsService,
+        stockOrg: "SZSG",
+        fulfillmentType: "china_warehouse_sales_order",
+        needWarehouseNotice: "yes",
+        providerAddress: "",
+      };
+    }
     return {
-      logisticsProvider: shortCarrier === "待人工确认" ? "待人工确认" : shortCarrier,
+      logisticsProvider: "待人工确认",
       logisticsService,
-      stockOrg: "SZSG",
-      fulfillmentType: "china_warehouse_sales_order",
+      stockOrg: "待人工确认",
+      fulfillmentType: "manual_review",
       needWarehouseNotice: "yes",
       providerAddress: "",
-      error: `没有从物流方式识别到快递商配置：${logisticsService}`,
+      error: `没有从物流方式识别到快递商配置（data/logistics-provider-map.csv 与物流串）：${logisticsService}`,
     };
   }
 

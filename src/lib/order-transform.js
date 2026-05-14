@@ -120,6 +120,8 @@ function buildOutputLinesFromOrder(order, maps) {
       const usPayment = isUsPaymentCollection(paymentOwner, salesOrgVal);
       const actualShipStockOrg = fulfillment.stockOrg;
       const salesOrderStockOrg = usPayment ? "XGSG" : actualShipStockOrg;
+      /** 美国收款且实物从深圳仓 SZSG 发 → 销售单库存组织 XGSG，需先做 SZSG→XGSG 调拨（与 prepare-kingdee-from-feishu transferRule 一致） */
+      const needTransferForUsPayment = usPayment && normalize(actualShipStockOrg) === "SZSG";
 
       outputLines.push({
         shopify_order_id: shopifyOrderId,
@@ -140,9 +142,9 @@ function buildOutputLinesFromOrder(order, maps) {
         actual_ship_stock_org: actualShipStockOrg,
         sales_order_stock_org: salesOrderStockOrg,
         stock_org: salesOrderStockOrg,
-        transfer_required: usPayment ? "yes" : "no",
-        transfer_from_stock_org: usPayment ? "SZSG" : "",
-        transfer_to_stock_org: usPayment ? "XGSG" : "",
+        transfer_required: needTransferForUsPayment ? "yes" : "no",
+        transfer_from_stock_org: needTransferForUsPayment ? "SZSG" : "",
+        transfer_to_stock_org: needTransferForUsPayment ? "XGSG" : "",
         shipping_country: country,
         shipping_province: province,
         receiver_name: receiverName,

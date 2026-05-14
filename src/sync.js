@@ -27,6 +27,14 @@ const OUTPUT_DIR = path.join(getProjectRoot(), "output");
 const SHOPIFY_FIRST = 50;
 const FEISHU_B_RANGE_ROWS = 30000;
 const FEISHU_NEW_ROW_HIGHLIGHT_COLOR = "#FFF258";
+const FEISHU_KINGDEE_ACTION_COL = "V";
+const FEISHU_KINGDEE_RESULT_COL = "W";
+/** V 列「同步状态」允许值（与飞书下拉一致；3/4 由调拨/金蝶后续更新，sync 只写 1、2 或 5） */
+const SYNC_STATUS_DIRECT_SALES = "1. 待直接生成销售订单";
+const SYNC_STATUS_NEED_TRANSFER_FIRST = "2. 待先生成调拨单";
+const SYNC_STATUS_TRANSFER_DONE_WAIT_SALES = "3. 调拨完成待生成销售订单";
+const SYNC_STATUS_SALES_SAVED = "4. 完成保存销售订单";
+const SYNC_STATUS_FAILED = "5. 同步失败";
 
 function isDryRun() {
   return String(process.env.DRY_RUN ?? "").trim().toLowerCase() === "true";
@@ -55,6 +63,44 @@ function formatSyncDate() {
 
 function orderDisplayName(name) {
   return normalizeOrderKey(name) || String(name ?? "").trim();
+}
+
+function cellTrim(v) {
+  if (v == null) return "";
+  return String(v).trim();
+}
+
+function indexToColumnName(idx1Based) {
+  let n = Number(idx1Based);
+  if (!Number.isFinite(n) || n < 1) return "";
+  let s = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/**
+ * 飞书 V 列同步状态：与行数据 transfer_required 一致（美国收款 + 实际 SZSG 发货 → 2. 先调拨）。
+ * 状态 3、4 不在此写入，避免覆盖后续金蝶或人工维护。
+ */
+function feishuColumnVSyncStatus(line) {
+  if (String(line?.status ?? "").trim() === "error") {
+    return SYNC_STATUS_FAILED;
+  }
+  if (String(line?.transfer_required ?? "").trim() === "yes") {
+    return SYNC_STATUS_NEED_TRANSFER_FIRST;
+  }
+  return SYNC_STATUS_DIRECT_SALES;
+}
+
+function feishuColumnWResult(line) {
+  if (String(line?.status ?? "").trim() === "error") {
+    return String(line?.error ?? "").trim();
+  }
+  return "";
 }
 
 function toFeishuWriteCell(cell, deltaRow) {
@@ -471,11 +517,6 @@ async function main() {
     return;
   }
 
-  if (false) {
-    console.log("没有新的 Shopify 订单需要写入飞书。");
-    return;
-  }
-
   try {
     const startRow = computeNextAppendRow(bValues);
     for (const line of newLines) {
@@ -487,6 +528,19 @@ async function main() {
 
     const endRow = startRow + newLines.length - 1;
     if (!isDryRun() && written > 0) {
+      // 新增行：写入 V(同步状态) / W(错误说明或后续金蝶结果)，仅写本次新增行，不影响旧行
+      const actionValues = newLines.map((line) => [feishuColumnVSyncStatus(line)]);
+      const resultValues = newLines.map((line) => [feishuColumnWResult(line)]);
+      await safeBatchUpdateValues(
+        feishuToken,
+        spreadsheetToken,
+        [
+          { range: `${sheetRef}!${FEISHU_KINGDEE_ACTION_COL}${startRow}:${FEISHU_KINGDEE_ACTION_COL}${endRow}`, values: actionValues },
+          { range: `${sheetRef}!${FEISHU_KINGDEE_RESULT_COL}${startRow}:${FEISHU_KINGDEE_RESULT_COL}${endRow}`, values: resultValues },
+        ],
+        "new append V/W sync status / result",
+      );
+
       const sheets = await querySpreadsheetSheets(feishuToken, spreadsheetToken);
       const sheetId = resolveSpreadsheetSheetId(sheets, sheetRef);
       if (!sheetId) {
@@ -503,9 +557,6 @@ async function main() {
   }
 
   printSyncSummary(summary);
-  console.log("写入飞书成功");
-  return;
-
   console.log("写入飞书成功");
 }
 

@@ -61,7 +61,7 @@ async function appendRangeBackgroundColor(token, spreadsheetToken, sheetId, star
     headers: authHeaders(token),
     body: JSON.stringify({
       appendStyle: {
-        range: `${sheetId}!A${startRow}:U${endRow}`,
+        range: `${sheetId}!A${startRow}:W${endRow}`,
         style: { backColor },
       },
     }),

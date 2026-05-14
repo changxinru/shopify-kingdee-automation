@@ -97,7 +97,14 @@ function readCsv(dataDir, fileName) {
     const rows = [];
     fs.createReadStream(path.join(dataDir, fileName))
       .pipe(csv())
-      .on("data", (row) => rows.push(row))
+      .on("data", (row) => {
+        const cleaned = {};
+        for (const [k, v] of Object.entries(row)) {
+          const nk = String(k).replace(/^\ufeff/, "").trim();
+          cleaned[nk] = v;
+        }
+        rows.push(cleaned);
+      })
       .on("end", () => resolve(rows))
       .on("error", reject);
   });
