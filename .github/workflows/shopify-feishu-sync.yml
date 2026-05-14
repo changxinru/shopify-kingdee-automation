@@ -1,0 +1,52 @@
+﻿name: Shopify to Feishu Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "是否只测试，不写入飞书"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Shopify to Feishu sync
+        run: npm run sync
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+
+          SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+          SHOPIFY_ADMIN_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ADMIN_ACCESS_TOKEN }}
+
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          FEISHU_SPREADSHEET_TOKEN: ${{ secrets.FEISHU_SPREADSHEET_TOKEN }}
+          FEISHU_WIKI_TOKEN: ${{ secrets.FEISHU_WIKI_TOKEN }}
+          FEISHU_SHEET_ID: ${{ secrets.FEISHU_SHEET_ID }}
+          FEISHU_SHEET_NAME: ${{ secrets.FEISHU_SHEET_NAME }}
+
+      - name: Upload output files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-output
+          path: output/
+          if-no-files-found: ignore
