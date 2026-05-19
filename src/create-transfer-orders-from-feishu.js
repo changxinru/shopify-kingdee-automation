@@ -102,6 +102,11 @@ function refNumber(value) {
   return s ? { FNumber: s } : undefined;
 }
 
+function refNumberUpper(value) {
+  const s = normalize(value);
+  return s ? { FNUMBER: s } : undefined;
+}
+
 function mustRef(field, value) {
   const ref = refNumber(value);
   if (!ref) throw new Error(`缺少金蝶字段：${field}`);
@@ -149,6 +154,7 @@ function buildTransferModel(orderName, items, headerIndex) {
   const destStockId = normalize(process.env.KINGDEE_TRANSFER_DEST_STOCK_ID || "XGSGCK014");
   const stockStatus = normalize(process.env.KINGDEE_TRANSFER_STOCK_STATUS || "KCZT01_SYS");
   const ownerType = normalize(process.env.KINGDEE_TRANSFER_OWNER_TYPE || "BD_OwnerOrg");
+  const keeperType = normalize(process.env.KINGDEE_TRANSFER_KEEPER_TYPE || ownerType);
   const unitId = normalize(process.env.KINGDEE_TRANSFER_UNIT_ID || "Pcs");
   const remark = `独立站订单 ${orderName} 先做销售调拨：${fromOrg} → ${toOrg}；${logisticsProvider}`;
 
@@ -176,36 +182,89 @@ function buildTransferModel(orderName, items, headerIndex) {
     if (missing.length) throw new Error(missing.join("；"));
 
     entries.push({
+      FEntryID: 0,
+      FRowType: "",
       FMaterialId: mustRef("物料编码", materialCode),
+      FParentMatId: refNumberUpper(""),
+      FAuxPropId: {},
+      FUnitID: mustRef("单位", unitId),
       FQty: qty,
+      FLot: refNumber(""),
       FSrcStockId: mustRef("调出仓库", srcStockId),
-      FSrcStockID: mustRef("调出仓库", srcStockId),
+      FSrcStockLocId: {},
       FDestStockId: mustRef("调入仓库", destStockId),
-      FDestStockID: mustRef("调入仓库", destStockId),
+      FDestStockLocId: {},
+      FBomId: refNumber(""),
       FSrcStockStatusId: mustRef("调出库存状态", stockStatus),
+      FDeliChkQualifyType: "",
+      FProduceDate: "1900-01-01",
       FDestStockStatusId: mustRef("调入库存状态", stockStatus),
+      FMtoNo: "",
+      FBusinessDate: "1900-01-01",
+      FExpiryDate: "1900-01-01",
+      FSrcBillTypeId: "",
+      FOwnerTypeOutId: ownerType,
       FOwnerOutId: mustRef("调出货主", fromOrg),
+      FOwnerTypeId: ownerType,
       FOwnerId: mustRef("调入货主", toOrg),
       FNoteEntry: `${orderName} ${productName}`,
-      FUnitID: mustRef("单位", unitId),
+      FSrcBillNo: orderName,
+      FProjectNo: "",
+      FSecUnitId: refNumber(""),
+      FSecQty: 0,
+      FExtAuxUnitId: refNumber(""),
+      FExtAuxUnitQty: 0,
       FBaseUnitId: mustRef("基本单位", unitId),
       FBaseQty: qty,
+      FISFREE: "false",
+      FKeeperTypeId: keeperType,
+      FKeeperId: mustRef("调入保管者", toOrg),
+      FKeeperTypeOutId: keeperType,
+      FKeeperOutId: mustRef("调出保管者", fromOrg),
+      FActQty: 0,
+      FDestLot: refNumber(""),
+      FDestMaterialId: refNumberUpper(""),
+      FDestBomId: refNumberUpper(""),
+      FSaleUnitId: refNumber(""),
+      FSaleQty: 0,
+      FSalBaseQty: 0,
+      FPriceUnitID: refNumber(""),
+      FPriceQty: 0,
+      FPriceBaseQty: 0,
+      FOutJoinQty: 0,
+      FBASEOUTJOINQTY: 0,
+      FServiceContext: "",
+      FSOEntryId: 0,
+      FTransReserveLink: "false",
+      FQmEntryId: 0,
+      FConvertEntryId: 0,
+      FThirdSrcEntryId: "",
+      FCheckDelivery: "false",
+      FYSDH: "",
+      FLXFS: "",
+      FBomEntryId: 0,
     });
   }
 
   const model = {
-    FBillTypeID: mustRef("单据类型", billType),
+    FID: 0,
+    FBillNo: "",
+    FBillTypeID: { FNUMBER: billType },
     FBizType: bizType,
     FTransferDirect: transferDirect,
     FTransferBizType: transferBizType,
+    FSaleOrgId: refNumber(salesOrg),
+    FSettleOrgId: refNumber(salesOrg),
     FStockOutOrgId: mustRef("调出库存组织", fromOrg),
+    FOwnerTypeOutIdHead: ownerType,
     FOwnerOutIdHead: mustRef("调出货主", fromOrg),
     FStockOrgId: mustRef("调入库存组织", toOrg),
-    FOwnerIdHead: mustRef("调入货主", toOrg),
     FOwnerTypeIdHead: ownerType,
-    FOwnerTypeOutIdHead: ownerType,
+    FOwnerIdHead: mustRef("调入货主", toOrg),
     FDate: billDate,
     FNote: remark,
+    FThirdSrcBillNo: orderName,
+    FThirdSystem: "shopify-feishu",
     FBillEntry: entries,
   };
 
@@ -277,7 +336,13 @@ async function main() {
       }
 
       const formId = normalize(process.env.KINGDEE_TRANSFER_FORM_ID || "STK_TransferDirect");
-      const resp = await saveDynamicForm(kingdeeConfig, formId, model, { verifyBaseDataField: true });
+      const resp = await saveDynamicForm(kingdeeConfig, formId, model, {
+        verifyBaseDataField: false,
+        autoAdjustField: true,
+        ignoreInterationFlag: true,
+        isControlPrecision: false,
+        validateRepeatJson: false,
+      });
       const parsed = parseSaveResult(resp.data);
       if (!parsed.isSuccess) {
         throw new Error(formatSaveError(resp));
