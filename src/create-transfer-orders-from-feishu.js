@@ -117,7 +117,6 @@ function salesOrgFromOwnerOrPaymentMethod(paymentOwner, paymentMethod) {
   if (owner === "美国") return "MGSG";
   if (owner === "香港") return "XGSG";
   const m = normalize(paymentMethod);
-  if (m.includes("Shopify Payments")) return "MGSG";
   if (m.includes("Shopify Payments") || m.includes("Shop Cash")) return "MGSG";
   if (m.includes("PayPal Express Checkout")) return "XGSG";
   if (m.includes("Airwallex")) return "XGSG";
@@ -144,10 +143,13 @@ function buildTransferModel(orderName, items, headerIndex) {
   const { paymentMethod, paymentOwner, salesOrg, fromOrg, toOrg } = transferRule(headerIndex, r0);
   const billType = normalize(process.env.KINGDEE_TRANSFER_BILL_TYPE || "ZJDB01_SYS");
   const bizType = normalize(process.env.KINGDEE_TRANSFER_BIZ_TYPE || "NORMAL");
+  const transferDirect = normalize(process.env.KINGDEE_TRANSFER_DIRECT || "GENERAL");
+  const transferBizType = normalize(process.env.KINGDEE_TRANSFER_BIZ_TYPE_DETAIL || "InnerOrgTransfer");
   const srcStockId = normalize(process.env.KINGDEE_TRANSFER_SRC_STOCK_ID || "");
   const destStockId = normalize(process.env.KINGDEE_TRANSFER_DEST_STOCK_ID || "");
   const stockStatus = normalize(process.env.KINGDEE_TRANSFER_STOCK_STATUS || "KCZT01_SYS");
   const ownerType = normalize(process.env.KINGDEE_TRANSFER_OWNER_TYPE || "BD_OwnerOrg");
+  const unitId = normalize(process.env.KINGDEE_TRANSFER_UNIT_ID || "");
   const remark = `独立站订单 ${orderName} 先做销售调拨：${fromOrg} → ${toOrg}；${logisticsProvider}`;
 
   const missingHead = [];
@@ -156,6 +158,9 @@ function buildTransferModel(orderName, items, headerIndex) {
   if (!fromOrg) missingHead.push("缺少调出库存组织");
   if (!toOrg) missingHead.push("缺少调入库存组织");
   if (!salesOrg) missingHead.push(`无法识别销售组织（付款方式：${paymentMethod}，收款归属：${paymentOwner}）`);
+  if (!srcStockId) missingHead.push("缺少调出仓库 KINGDEE_TRANSFER_SRC_STOCK_ID");
+  if (!destStockId) missingHead.push("缺少调入仓库 KINGDEE_TRANSFER_DEST_STOCK_ID");
+  if (srcStockId && destStockId && srcStockId === destStockId) missingHead.push("调出仓库和调入仓库不能相同");
   if (missingHead.length) throw new Error(missingHead.join("；"));
 
   const entries = [];
@@ -173,31 +178,37 @@ function buildTransferModel(orderName, items, headerIndex) {
     const entry = {
       FMaterialId: mustRef("物料编码", materialCode),
       FQty: qty,
-      FSrcStockOrgId: mustRef("调出库存组织", fromOrg),
-      FDestStockOrgId: mustRef("调入库存组织", toOrg),
+      FSrcStockId: mustRef("调出仓库", srcStockId),
+      FDestStockId: mustRef("调入仓库", destStockId),
       FSrcStockStatusId: mustRef("调出库存状态", stockStatus),
       FDestStockStatusId: mustRef("调入库存状态", stockStatus),
-      FEntryNote: `${orderName} ${productName}`,
+      FOwnerOutId: mustRef("调出货主", fromOrg),
+      FOwnerId: mustRef("调入货主", toOrg),
+      FNoteEntry: `${orderName} ${productName}`,
     };
 
-    // 仓库编码在不同金蝶环境中可能必填，也可能由库存组织/物料默认带出；先做成环境变量可配置。
-    if (srcStockId) entry.FSrcStockId = refNumber(srcStockId);
-    if (destStockId) entry.FDestStockId = refNumber(destStockId);
+    if (unitId) {
+      entry.FUnitID = refNumber(unitId);
+      entry.FBaseUnitId = refNumber(unitId);
+      entry.FBaseQty = qty;
+    }
 
     entries.push(entry);
   }
 
   const model = {
     FBillTypeID: mustRef("单据类型", billType),
-    FDate: billDate,
-    FStockOrgId: mustRef("调出库存组织", fromOrg),
+    FBizType: bizType,
+    FTransferDirect: transferDirect,
+    FTransferBizType: transferBizType,
+    FStockOutOrgId: mustRef("调出库存组织", fromOrg),
+    FOwnerOutIdHead: mustRef("调出货主", fromOrg),
+    FStockOrgId: mustRef("调入库存组织", toOrg),
     FOwnerTypeIdHead: ownerType,
-    FOwnerIdHead: mustRef("货主", fromOrg),
     FOwnerTypeOutIdHead: ownerType,
-    FOwnerOutIdHead: mustRef("调入货主", toOrg),
-    FTransferBizType: bizType,
+    FDate: billDate,
     FNote: remark,
-    FTransferOutEntry: entries,
+    FBillEntry: entries,
   };
 
   return model;
@@ -267,7 +278,7 @@ async function main() {
         continue;
       }
 
-      const formId = normalize(process.env.KINGDEE_TRANSFER_FORM_ID || "STK_TRANSFEROUT");
+      const formId = normalize(process.env.KINGDEE_TRANSFER_FORM_ID || "STK_TransferDirect");
       const resp = await saveDynamicForm(kingdeeConfig, formId, model);
       const parsed = parseSaveResult(resp.data);
       if (!parsed.isSuccess) {
