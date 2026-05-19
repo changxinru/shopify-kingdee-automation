@@ -6,10 +6,6 @@ const { getTenantAccessToken, getSpreadsheetTokenFromWiki } = require("./feishu-
 const {
   readSheetValues,
   batchUpdateValues,
-  readRangeStyles,
-  extractBackColor,
-  querySpreadsheetSheets,
-  resolveSpreadsheetSheetId,
 } = require("./lib/feishu-sheets");
 const {
   saveDynamicForm,
@@ -27,21 +23,8 @@ const STATUS_FAILED = "5. 同步失败";
 
 const COL_V_STATUS = 22;
 
-const DEFAULT_YELLOW_COLORS = new Set([
-  "#fff258",
-  "#fff2cc",
-  "#ffff00",
-  "rgb(255,242,88)",
-  "rgb(255,242,204)",
-  "rgb(255,255,0)",
-]);
-
 function normalize(s) {
   return String(s ?? "").trim();
-}
-
-function normalizeColor(s) {
-  return normalize(s).replace(/\s+/g, "").toLowerCase();
 }
 
 function toNumber(v) {
@@ -119,69 +102,6 @@ function getKingdeeConfig() {
     appSecret: normalize(process.env.KINGDEE_APP_SECRET),
     lcid: Number.isFinite(lcidNum) ? lcidNum : lcidRaw,
   };
-}
-
-function allowedYellowColors() {
-  const raw = normalize(process.env.FEISHU_DIRECT_SALES_YELLOW_COLORS);
-  if (!raw) return DEFAULT_YELLOW_COLORS;
-  return new Set(raw.split(/[;,]/).map(normalizeColor).filter(Boolean));
-}
-
-function isYellowColor(color) {
-  const c = normalizeColor(color);
-  if (!c) return false;
-  return allowedYellowColors().has(c);
-}
-
-function flattenStyles(data) {
-  const out = [];
-  function walk(x) {
-    if (Array.isArray(x)) {
-      x.forEach(walk);
-      return;
-    }
-    if (!x || typeof x !== "object") return;
-    const color = extractBackColor(x);
-    if (color) out.push(x);
-    for (const v of Object.values(x)) {
-      if (v && typeof v === "object") walk(v);
-    }
-  }
-  walk(data);
-  return out;
-}
-
-async function readDColumnYellowRows(feishuToken, spreadsheetToken, sheetId, startRow, endRow) {
-  if (endRow < startRow) return new Set();
-  const range = `${sheetId}!D${startRow}:D${endRow}`;
-  const styles = await readRangeStyles(feishuToken, spreadsheetToken, range);
-  const cells = flattenStyles(styles);
-  if (!cells.length) {
-    throw new Error("样式接口未返回可识别的单元格背景色");
-  }
-  const yellow = new Set();
-  for (let i = 0; i < cells.length; i++) {
-    const color = extractBackColor(cells[i]);
-    if (isYellowColor(color)) yellow.add(startRow + i);
-  }
-  return yellow;
-}
-
-async function resolveDColumnGate(feishuToken, spreadsheetToken, sheetId, startRow, endRow) {
-  try {
-    return { yellowRows: await readDColumnYellowRows(feishuToken, spreadsheetToken, sheetId, startRow, endRow), bypassed: false, reason: "" };
-  } catch (error) {
-    const reason = error?.message || String(error);
-    if (isDryRun() || boolEnv("FEISHU_ALLOW_NO_STYLE_CHECK")) {
-      console.warn(`警告：无法读取飞书 D 列背景色，当前将只按 V 列筛选继续执行。原因：${reason}`);
-      console.warn("真实保存金蝶前，建议改用明确文本状态列，或确认后设置 FEISHU_ALLOW_NO_STYLE_CHECK=true。");
-      return { yellowRows: null, bypassed: true, reason };
-    }
-    throw new Error(
-      `读取飞书 D 列背景色失败：${reason}。为避免误生成金蝶销售订单，本次终止。` +
-        "可先用 DRY_RUN=true 检查生成 JSON；真实运行若确认只按 V 列筛选，可设置 FEISHU_ALLOW_NO_STYLE_CHECK=true。",
-    );
-  }
 }
 
 function paymentOwnerFromRow(headerIndex, row) {
@@ -314,25 +234,12 @@ async function main() {
   const rows = values.slice(1);
   const headerIndex = buildHeaderIndex(header);
 
-  const sheets = await querySpreadsheetSheets(feishuToken, spreadsheetToken);
-  const sheetId = resolveSpreadsheetSheetId(sheets, sheetRef);
-  if (!sheetId) throw new Error("无法解析飞书工作表 sheet_id，请检查 FEISHU_SHEET_ID / FEISHU_SHEET_NAME");
-
-  const firstDataRow = 2;
-  const lastDataRow = rows.length + 1;
-  const dGate = await resolveDColumnGate(feishuToken, spreadsheetToken, sheetId, firstDataRow, lastDataRow);
-
   const candidates = [];
-  const skippedNotYellow = [];
   for (let i = 0; i < rows.length; i++) {
     const rowNumber = i + 2;
     const row = rows[i];
     const status = normalize(getByCol(row, COL_V_STATUS - 1));
     if (status !== STATUS_DIRECT_SALES) continue;
-    if (dGate.yellowRows && !dGate.yellowRows.has(rowNumber)) {
-      skippedNotYellow.push(rowNumber);
-      continue;
-    }
     candidates.push({ rowNumber, row });
   }
 
@@ -391,13 +298,11 @@ async function main() {
     await batchUpdateValues(feishuToken, spreadsheetToken, allUpdates);
   }
 
-  console.log(`V列待直接生成销售订单行数：${candidates.length + skippedNotYellow.length}`);
-  console.log(`因D列不是黄色而跳过行数：${dGate.bypassed ? "未检查（飞书 API 读不到颜色）" : skippedNotYellow.length}`);
+  console.log(`V列待直接生成销售订单行数：${candidates.length}`);
   console.log(`实际处理行数：${candidates.length}`);
   console.log(`实际处理订单数：${groups.size}`);
   console.log(`成功订单数：${successOrders}`);
   console.log(`失败订单数：${failedOrders}`);
-  if (dGate.bypassed) console.log("注意：本次未能检查 D 列黄色，仅按 V 列筛选。原因：" + dGate.reason);
   if (isDryRun()) console.log("DRY_RUN=true，未调用金蝶 Save，未回写飞书状态。");
 }
 
@@ -410,6 +315,5 @@ if (require.main === module) {
 
 module.exports = {
   buildSaleOrderModel,
-  isYellowColor,
   main,
 };
