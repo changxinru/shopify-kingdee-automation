@@ -154,7 +154,7 @@ function buildTransferModel(orderName, items, headerIndex) {
   const destStockId = normalize(process.env.KINGDEE_TRANSFER_DEST_STOCK_ID || "XGSGCK014");
   const stockStatus = normalize(process.env.KINGDEE_TRANSFER_STOCK_STATUS || "KCZT01_SYS");
   const ownerType = normalize(process.env.KINGDEE_TRANSFER_OWNER_TYPE || "BD_OwnerOrg");
-  const keeperType = normalize(process.env.KINGDEE_TRANSFER_KEEPER_TYPE || ownerType);
+  const keeperType = normalize(process.env.KINGDEE_TRANSFER_KEEPER_TYPE || "BD_KeeperOrg");
   const unitId = normalize(process.env.KINGDEE_TRANSFER_UNIT_ID || "Pcs");
   const remark = `独立站订单 ${orderName} 先做销售调拨：${fromOrg} → ${toOrg}；${logisticsProvider}`;
 
