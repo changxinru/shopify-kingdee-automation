@@ -25,9 +25,7 @@ const STATUS_DIRECT_SALES = "1. 待直接生成销售订单";
 const STATUS_SALES_DONE = "4. 完成保存销售订单";
 const STATUS_FAILED = "5. 同步失败";
 
-const COL_D_PAYMENT_METHOD = 4;
 const COL_V_STATUS = 22;
-const COL_W_RESULT = 23;
 
 const DEFAULT_YELLOW_COLORS = new Set([
   "#fff258",
@@ -52,20 +50,12 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : NaN;
 }
 
-function isDryRun() {
-  return String(process.env.DRY_RUN ?? "").trim().toLowerCase() === "true";
+function boolEnv(name) {
+  return ["1", "true", "yes", "y"].includes(normalize(process.env[name]).toLowerCase());
 }
 
-function indexToColumnName(idx1Based) {
-  let n = Number(idx1Based);
-  if (!Number.isFinite(n) || n < 1) return "";
-  let s = "";
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    s = String.fromCharCode(65 + rem) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
+function isDryRun() {
+  return boolEnv("DRY_RUN");
 }
 
 function buildHeaderIndex(headerRow) {
@@ -167,7 +157,7 @@ async function readDColumnYellowRows(feishuToken, spreadsheetToken, sheetId, sta
   const styles = await readRangeStyles(feishuToken, spreadsheetToken, range);
   const cells = flattenStyles(styles);
   if (!cells.length) {
-    throw new Error("读取飞书 D 列背景色失败：样式接口未返回可识别的单元格样式。为避免误生成金蝶单据，本次终止。");
+    throw new Error("样式接口未返回可识别的单元格背景色");
   }
   const yellow = new Set();
   for (let i = 0; i < cells.length; i++) {
@@ -175,6 +165,23 @@ async function readDColumnYellowRows(feishuToken, spreadsheetToken, sheetId, sta
     if (isYellowColor(color)) yellow.add(startRow + i);
   }
   return yellow;
+}
+
+async function resolveDColumnGate(feishuToken, spreadsheetToken, sheetId, startRow, endRow) {
+  try {
+    return { yellowRows: await readDColumnYellowRows(feishuToken, spreadsheetToken, sheetId, startRow, endRow), bypassed: false, reason: "" };
+  } catch (error) {
+    const reason = error?.message || String(error);
+    if (isDryRun() || boolEnv("FEISHU_ALLOW_NO_STYLE_CHECK")) {
+      console.warn(`警告：无法读取飞书 D 列背景色，当前将只按 V 列筛选继续执行。原因：${reason}`);
+      console.warn("真实保存金蝶前，建议改用明确文本状态列，或确认后设置 FEISHU_ALLOW_NO_STYLE_CHECK=true。");
+      return { yellowRows: null, bypassed: true, reason };
+    }
+    throw new Error(
+      `读取飞书 D 列背景色失败：${reason}。为避免误生成金蝶销售订单，本次终止。` +
+        "可先用 DRY_RUN=true 检查生成 JSON；真实运行若确认只按 V 列筛选，可设置 FEISHU_ALLOW_NO_STYLE_CHECK=true。",
+    );
+  }
 }
 
 function paymentOwnerFromRow(headerIndex, row) {
@@ -313,7 +320,7 @@ async function main() {
 
   const firstDataRow = 2;
   const lastDataRow = rows.length + 1;
-  const yellowRows = await readDColumnYellowRows(feishuToken, spreadsheetToken, sheetId, firstDataRow, lastDataRow);
+  const dGate = await resolveDColumnGate(feishuToken, spreadsheetToken, sheetId, firstDataRow, lastDataRow);
 
   const candidates = [];
   const skippedNotYellow = [];
@@ -322,7 +329,7 @@ async function main() {
     const row = rows[i];
     const status = normalize(getByCol(row, COL_V_STATUS - 1));
     if (status !== STATUS_DIRECT_SALES) continue;
-    if (!yellowRows.has(rowNumber)) {
+    if (dGate.yellowRows && !dGate.yellowRows.has(rowNumber)) {
       skippedNotYellow.push(rowNumber);
       continue;
     }
@@ -385,11 +392,12 @@ async function main() {
   }
 
   console.log(`V列待直接生成销售订单行数：${candidates.length + skippedNotYellow.length}`);
-  console.log(`因D列不是黄色而跳过行数：${skippedNotYellow.length}`);
+  console.log(`因D列不是黄色而跳过行数：${dGate.bypassed ? "未检查（飞书 API 读不到颜色）" : skippedNotYellow.length}`);
   console.log(`实际处理行数：${candidates.length}`);
   console.log(`实际处理订单数：${groups.size}`);
   console.log(`成功订单数：${successOrders}`);
   console.log(`失败订单数：${failedOrders}`);
+  if (dGate.bypassed) console.log("注意：本次未能检查 D 列黄色，仅按 V 列筛选。原因：" + dGate.reason);
   if (isDryRun()) console.log("DRY_RUN=true，未调用金蝶 Save，未回写飞书状态。");
 }
 
