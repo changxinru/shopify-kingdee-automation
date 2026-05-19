@@ -19,7 +19,7 @@ async function readSheetValues(token, spreadsheetToken, range, options = {}) {
 }
 
 /**
- * @param {{ range: string, values: (string|number)[][] }[]} valueRanges
+ * @param {{ range: string, values: (string|number|object)[][] }[]} valueRanges
  */
 async function batchUpdateValues(token, spreadsheetToken, valueRanges) {
   await feishuRequest(`/sheets/v2/spreadsheets/${spreadsheetToken}/values_batch_update`, {
@@ -27,6 +27,83 @@ async function batchUpdateValues(token, spreadsheetToken, valueRanges) {
     headers: authHeaders(token),
     body: JSON.stringify({ valueRanges }),
   });
+}
+
+async function tryFeishuRequest(path, options) {
+  try {
+    return { ok: true, body: await feishuRequest(path, options) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+/**
+ * 读取单元格样式。飞书公开文档稳定支持 PUT /style 设置样式；读取样式在不同租户/API 版本路径不一致。
+ * 这里依次尝试常见 styles 查询端点，全部失败时返回带细节的错误，避免误生成金蝶单据。
+ */
+async function readRangeStyles(token, spreadsheetToken, range) {
+  const headers = authHeaders(token);
+  const encoded = encodeURIComponent(range);
+  const attempts = [
+    {
+      label: "POST /styles {ranges}",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/styles`,
+      options: { method: "POST", headers, body: JSON.stringify({ ranges: [range] }) },
+    },
+    {
+      label: "POST /style {ranges}",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/style`,
+      options: { method: "POST", headers, body: JSON.stringify({ ranges: [range] }) },
+    },
+    {
+      label: "GET /styles?ranges=",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/styles?ranges=${encoded}`,
+      options: { method: "GET", headers },
+    },
+    {
+      label: "GET /style?ranges=",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/style?ranges=${encoded}`,
+      options: { method: "GET", headers },
+    },
+  ];
+
+  const errors = [];
+  for (const attempt of attempts) {
+    const resp = await tryFeishuRequest(attempt.path, attempt.options);
+    if (resp.ok) return resp.body.data || resp.body;
+    errors.push(`${attempt.label}: ${resp.error?.message || String(resp.error)}`);
+  }
+
+  throw new Error(
+    "读取飞书单元格背景色失败。飞书当前 API 未开放/未命中可用的样式读取端点，因此无法自动判断 D 列是否黄色。" +
+      "为避免误生成金蝶销售订单，本次终止。尝试结果：" +
+      errors.join(" | "),
+  );
+}
+
+/**
+ * 尽量从飞书样式对象中提取背景色。
+ */
+function extractBackColor(styleCell) {
+  if (!styleCell || typeof styleCell !== "object") return "";
+  const candidates = [
+    styleCell.backColor,
+    styleCell.backgroundColor,
+    styleCell.background_color,
+    styleCell.style?.backColor,
+    styleCell.style?.backgroundColor,
+    styleCell.style?.background_color,
+    styleCell.cellStyle?.backColor,
+    styleCell.cellStyle?.backgroundColor,
+    styleCell.cellStyle?.background_color,
+    styleCell.effectiveFormat?.backgroundColor,
+    styleCell.userEnteredFormat?.backgroundColor,
+  ];
+  for (const v of candidates) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return "";
 }
 
 /**
@@ -143,6 +220,8 @@ module.exports = {
   getTenantAccessToken,
   readSheetValues,
   batchUpdateValues,
+  readRangeStyles,
+  extractBackColor,
   querySpreadsheetSheets,
   resolveSpreadsheetSheetId,
   appendRangeBackgroundColor,
