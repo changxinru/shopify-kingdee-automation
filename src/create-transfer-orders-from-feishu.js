@@ -97,6 +97,17 @@ function getKingdeeConfig() {
   };
 }
 
+function refNumber(value) {
+  const s = normalize(value);
+  return s ? { FNumber: s } : undefined;
+}
+
+function mustRef(field, value) {
+  const ref = refNumber(value);
+  if (!ref) throw new Error(`缺少金蝶字段：${field}`);
+  return ref;
+}
+
 function mustCode(field, value) {
   const s = normalize(value);
   if (!s) throw new Error(`缺少金蝶字段：${field}`);
@@ -171,30 +182,30 @@ function buildTransferModel(orderName, items, headerIndex) {
     if (missing.length) throw new Error(missing.join("；"));
 
     entries.push({
-      FMaterialId: mustCode("物料编码", materialCode),
+      FMaterialId: mustRef("物料编码", materialCode),
       FQty: qty,
       FSrcStockId: mustCode("调出仓库", srcStockId),
       FDestStockId: mustCode("调入仓库", destStockId),
-      FSrcStockStatusId: mustCode("调出库存状态", stockStatus),
-      FDestStockStatusId: mustCode("调入库存状态", stockStatus),
-      FOwnerOutId: mustCode("调出货主", fromOrg),
-      FOwnerId: mustCode("调入货主", toOrg),
+      FSrcStockStatusId: mustRef("调出库存状态", stockStatus),
+      FDestStockStatusId: mustRef("调入库存状态", stockStatus),
+      FOwnerOutId: mustRef("调出货主", fromOrg),
+      FOwnerId: mustRef("调入货主", toOrg),
       FNoteEntry: `${orderName} ${productName}`,
-      FUnitID: mustCode("单位", unitId),
-      FBaseUnitId: mustCode("基本单位", unitId),
+      FUnitID: mustRef("单位", unitId),
+      FBaseUnitId: mustRef("基本单位", unitId),
       FBaseQty: qty,
     });
   }
 
   const model = {
-    FBillTypeID: mustCode("单据类型", billType),
+    FBillTypeID: mustRef("单据类型", billType),
     FBizType: bizType,
     FTransferDirect: transferDirect,
     FTransferBizType: transferBizType,
-    FStockOutOrgId: mustCode("调出库存组织", fromOrg),
-    FOwnerOutIdHead: mustCode("调出货主", fromOrg),
-    FStockOrgId: mustCode("调入库存组织", toOrg),
-    FOwnerIdHead: mustCode("调入货主", toOrg),
+    FStockOutOrgId: mustRef("调出库存组织", fromOrg),
+    FOwnerOutIdHead: mustRef("调出货主", fromOrg),
+    FStockOrgId: mustRef("调入库存组织", toOrg),
+    FOwnerIdHead: mustRef("调入货主", toOrg),
     FOwnerTypeIdHead: ownerType,
     FOwnerTypeOutIdHead: ownerType,
     FDate: billDate,
