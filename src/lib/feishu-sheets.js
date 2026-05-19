@@ -29,16 +29,56 @@ async function batchUpdateValues(token, spreadsheetToken, valueRanges) {
   });
 }
 
+async function tryFeishuRequest(path, options) {
+  try {
+    return { ok: true, body: await feishuRequest(path, options) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
 /**
- * 读取单元格样式。飞书该接口返回结构在不同版本/租户可能略有差异，调用方需要用 extractBackColor 兼容。
+ * 读取单元格样式。飞书公开文档稳定支持 PUT /style 设置样式；读取样式在不同租户/API 版本路径不一致。
+ * 这里依次尝试常见 styles 查询端点，全部失败时返回带细节的错误，避免误生成金蝶单据。
  */
 async function readRangeStyles(token, spreadsheetToken, range) {
+  const headers = authHeaders(token);
   const encoded = encodeURIComponent(range);
-  const body = await feishuRequest(
-    `/sheets/v2/spreadsheets/${spreadsheetToken}/style?ranges=${encoded}`,
-    { method: "GET", headers: authHeaders(token) },
+  const attempts = [
+    {
+      label: "POST /styles {ranges}",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/styles`,
+      options: { method: "POST", headers, body: JSON.stringify({ ranges: [range] }) },
+    },
+    {
+      label: "POST /style {ranges}",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/style`,
+      options: { method: "POST", headers, body: JSON.stringify({ ranges: [range] }) },
+    },
+    {
+      label: "GET /styles?ranges=",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/styles?ranges=${encoded}`,
+      options: { method: "GET", headers },
+    },
+    {
+      label: "GET /style?ranges=",
+      path: `/sheets/v2/spreadsheets/${spreadsheetToken}/style?ranges=${encoded}`,
+      options: { method: "GET", headers },
+    },
+  ];
+
+  const errors = [];
+  for (const attempt of attempts) {
+    const resp = await tryFeishuRequest(attempt.path, attempt.options);
+    if (resp.ok) return resp.body.data || resp.body;
+    errors.push(`${attempt.label}: ${resp.error?.message || String(resp.error)}`);
+  }
+
+  throw new Error(
+    "读取飞书单元格背景色失败。飞书当前 API 未开放/未命中可用的样式读取端点，因此无法自动判断 D 列是否黄色。" +
+      "为避免误生成金蝶销售订单，本次终止。尝试结果：" +
+      errors.join(" | "),
   );
-  return body.data || body;
 }
 
 /**
@@ -56,6 +96,8 @@ function extractBackColor(styleCell) {
     styleCell.cellStyle?.backColor,
     styleCell.cellStyle?.backgroundColor,
     styleCell.cellStyle?.background_color,
+    styleCell.effectiveFormat?.backgroundColor,
+    styleCell.userEnteredFormat?.backgroundColor,
   ];
   for (const v of candidates) {
     const s = String(v ?? "").trim();
