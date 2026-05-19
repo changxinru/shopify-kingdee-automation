@@ -19,7 +19,7 @@ async function readSheetValues(token, spreadsheetToken, range, options = {}) {
 }
 
 /**
- * @param {{ range: string, values: (string|number)[][] }[]} valueRanges
+ * @param {{ range: string, values: (string|number|object)[][] }[]} valueRanges
  */
 async function batchUpdateValues(token, spreadsheetToken, valueRanges) {
   await feishuRequest(`/sheets/v2/spreadsheets/${spreadsheetToken}/values_batch_update`, {
@@ -27,6 +27,41 @@ async function batchUpdateValues(token, spreadsheetToken, valueRanges) {
     headers: authHeaders(token),
     body: JSON.stringify({ valueRanges }),
   });
+}
+
+/**
+ * 读取单元格样式。飞书该接口返回结构在不同版本/租户可能略有差异，调用方需要用 extractBackColor 兼容。
+ */
+async function readRangeStyles(token, spreadsheetToken, range) {
+  const encoded = encodeURIComponent(range);
+  const body = await feishuRequest(
+    `/sheets/v2/spreadsheets/${spreadsheetToken}/style?ranges=${encoded}`,
+    { method: "GET", headers: authHeaders(token) },
+  );
+  return body.data || body;
+}
+
+/**
+ * 尽量从飞书样式对象中提取背景色。
+ */
+function extractBackColor(styleCell) {
+  if (!styleCell || typeof styleCell !== "object") return "";
+  const candidates = [
+    styleCell.backColor,
+    styleCell.backgroundColor,
+    styleCell.background_color,
+    styleCell.style?.backColor,
+    styleCell.style?.backgroundColor,
+    styleCell.style?.background_color,
+    styleCell.cellStyle?.backColor,
+    styleCell.cellStyle?.backgroundColor,
+    styleCell.cellStyle?.background_color,
+  ];
+  for (const v of candidates) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return "";
 }
 
 /**
@@ -143,6 +178,8 @@ module.exports = {
   getTenantAccessToken,
   readSheetValues,
   batchUpdateValues,
+  readRangeStyles,
+  extractBackColor,
   querySpreadsheetSheets,
   resolveSpreadsheetSheetId,
   appendRangeBackgroundColor,
