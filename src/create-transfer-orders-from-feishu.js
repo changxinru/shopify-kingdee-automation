@@ -145,11 +145,11 @@ function buildTransferModel(orderName, items, headerIndex) {
   const bizType = normalize(process.env.KINGDEE_TRANSFER_BIZ_TYPE || "NORMAL");
   const transferDirect = normalize(process.env.KINGDEE_TRANSFER_DIRECT || "GENERAL");
   const transferBizType = normalize(process.env.KINGDEE_TRANSFER_BIZ_TYPE_DETAIL || "InnerOrgTransfer");
-  const srcStockId = normalize(process.env.KINGDEE_TRANSFER_SRC_STOCK_ID || "");
-  const destStockId = normalize(process.env.KINGDEE_TRANSFER_DEST_STOCK_ID || "");
+  const srcStockId = normalize(process.env.KINGDEE_TRANSFER_SRC_STOCK_ID || "SZSGCK002");
+  const destStockId = normalize(process.env.KINGDEE_TRANSFER_DEST_STOCK_ID || "XGSGCK014");
   const stockStatus = normalize(process.env.KINGDEE_TRANSFER_STOCK_STATUS || "KCZT01_SYS");
   const ownerType = normalize(process.env.KINGDEE_TRANSFER_OWNER_TYPE || "BD_OwnerOrg");
-  const unitId = normalize(process.env.KINGDEE_TRANSFER_UNIT_ID || "");
+  const unitId = normalize(process.env.KINGDEE_TRANSFER_UNIT_ID || "Pcs");
   const remark = `独立站订单 ${orderName} 先做销售调拨：${fromOrg} → ${toOrg}；${logisticsProvider}`;
 
   const missingHead = [];
@@ -185,13 +185,10 @@ function buildTransferModel(orderName, items, headerIndex) {
       FOwnerOutId: mustRef("调出货主", fromOrg),
       FOwnerId: mustRef("调入货主", toOrg),
       FNoteEntry: `${orderName} ${productName}`,
+      FUnitID: mustRef("单位", unitId),
+      FBaseUnitId: mustRef("基本单位", unitId),
+      FBaseQty: qty,
     };
-
-    if (unitId) {
-      entry.FUnitID = refNumber(unitId);
-      entry.FBaseUnitId = refNumber(unitId);
-      entry.FBaseQty = qty;
-    }
 
     entries.push(entry);
   }
