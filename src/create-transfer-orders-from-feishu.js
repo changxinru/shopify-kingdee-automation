@@ -111,7 +111,7 @@ function buildTransferModel(orderName, items, headerIndex) {
   const billType = normalize(process.env.KINGDEE_TRANSFER_BILL_TYPE || "ZJDB01_SYS");
   const bizType = normalize(process.env.KINGDEE_TRANSFER_BIZ_TYPE || "NORMAL");
   const transferDirect = normalize(process.env.KINGDEE_TRANSFER_DIRECT || "GENERAL");
-  const transferBizType = normalize(process.env.KINGDEE_TRANSFER_BIZ_TYPE_DETAIL || "InnerOrgTransfer");
+  const transferBizType = normalize(process.env.KINGDEE_TRANSFER_BIZ_TYPE_DETAIL || "OverOrgTransfer");
   const srcStockId = normalize(process.env.KINGDEE_TRANSFER_SRC_STOCK_ID || "SZSGCK002");
   const destStockId = normalize(process.env.KINGDEE_TRANSFER_DEST_STOCK_ID || "XGSGCK014");
   const stockStatus = normalize(process.env.KINGDEE_TRANSFER_STOCK_STATUS || "KCZT01_SYS");
