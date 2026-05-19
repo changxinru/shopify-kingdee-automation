@@ -201,6 +201,7 @@ function buildTransferModel(orderName, items, headerIndex) {
     FStockOutOrgId: mustRef("调出库存组织", fromOrg),
     FOwnerOutIdHead: mustRef("调出货主", fromOrg),
     FStockOrgId: mustRef("调入库存组织", toOrg),
+    FOwnerIdHead: mustRef("调入货主", toOrg),
     FOwnerTypeIdHead: ownerType,
     FOwnerTypeOutIdHead: ownerType,
     FDate: billDate,
