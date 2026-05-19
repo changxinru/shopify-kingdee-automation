@@ -153,7 +153,7 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
   const sellerCode = normalize(process.env.KINGDEE_SELLER_CODE || "");
   const settleOrg = normalize(process.env.KINGDEE_SETTLE_ORG || salesOrg);
   const receiveOrg = normalize(process.env.KINGDEE_RECEIVE_ORG || salesOrg);
-  const currency = normalize(process.env.KINGDEE_CURRENCY || "PRE001");
+  const currency = normalize(process.env.KINGDEE_CURRENCY || "PRE007");
   const saleDept = normalize(process.env.KINGDEE_SALE_DEPT || "");
   const remark = `独立站订单 ${orderName} ${logisticsProvider}`;
 
