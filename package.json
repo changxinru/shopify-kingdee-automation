@@ -6,6 +6,7 @@
     "start": "node src/transform-shopify.js",
     "sync": "node src/sync.js",
     "prepare:kingdee": "node src/prepare-kingdee-from-feishu.js",
+    "kingdee:direct-sales": "node src/create-direct-sales-orders-from-feishu.js",
     "test:shopify": "node src/test-shopify.js",
     "test:kingdee": "node src/test-kingdee.js"
   },
