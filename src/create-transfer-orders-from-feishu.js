@@ -108,12 +108,6 @@ function mustRef(field, value) {
   return ref;
 }
 
-function mustCode(field, value) {
-  const s = normalize(value);
-  if (!s) throw new Error(`缺少金蝶字段：${field}`);
-  return s;
-}
-
 function paymentOwnerFromRow(headerIndex, row) {
   return normalize(getByHeader(headerIndex, row, ["收款账户", "付款归属", "payment_owner", "payment owner"], null));
 }
@@ -184,8 +178,8 @@ function buildTransferModel(orderName, items, headerIndex) {
     entries.push({
       FMaterialId: mustRef("物料编码", materialCode),
       FQty: qty,
-      FSrcStockId: mustCode("调出仓库", srcStockId),
-      FDestStockId: mustCode("调入仓库", destStockId),
+      FSrcStockId: mustRef("调出仓库", srcStockId),
+      FDestStockId: mustRef("调入仓库", destStockId),
       FSrcStockStatusId: mustRef("调出库存状态", stockStatus),
       FDestStockStatusId: mustRef("调入库存状态", stockStatus),
       FOwnerOutId: mustRef("调出货主", fromOrg),
