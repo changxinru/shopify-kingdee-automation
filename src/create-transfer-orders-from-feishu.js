@@ -97,15 +97,10 @@ function getKingdeeConfig() {
   };
 }
 
-function refNumber(value) {
+function mustCode(field, value) {
   const s = normalize(value);
-  return s ? { FNumber: s } : undefined;
-}
-
-function mustRef(field, value) {
-  const ref = refNumber(value);
-  if (!ref) throw new Error(`缺少金蝶字段：${field}`);
-  return ref;
+  if (!s) throw new Error(`缺少金蝶字段：${field}`);
+  return s;
 }
 
 function paymentOwnerFromRow(headerIndex, row) {
@@ -175,35 +170,31 @@ function buildTransferModel(orderName, items, headerIndex) {
     if (!Number.isFinite(qty) || qty <= 0) missing.push(`第 ${rowNo} 行缺少数量(F列)`);
     if (missing.length) throw new Error(missing.join("；"));
 
-    const entry = {
-      FMaterialId: mustRef("物料编码", materialCode),
+    entries.push({
+      FMaterialId: mustCode("物料编码", materialCode),
       FQty: qty,
-      FSrcStockId: mustRef("调出仓库", srcStockId),
-      FSrcStockID: mustRef("调出仓库", srcStockId),
-      FDestStockId: mustRef("调入仓库", destStockId),
-      FDestStockID: mustRef("调入仓库", destStockId),
-      FSrcStockStatusId: mustRef("调出库存状态", stockStatus),
-      FDestStockStatusId: mustRef("调入库存状态", stockStatus),
-      FOwnerOutId: mustRef("调出货主", fromOrg),
-      FOwnerId: mustRef("调入货主", toOrg),
+      FSrcStockId: mustCode("调出仓库", srcStockId),
+      FDestStockId: mustCode("调入仓库", destStockId),
+      FSrcStockStatusId: mustCode("调出库存状态", stockStatus),
+      FDestStockStatusId: mustCode("调入库存状态", stockStatus),
+      FOwnerOutId: mustCode("调出货主", fromOrg),
+      FOwnerId: mustCode("调入货主", toOrg),
       FNoteEntry: `${orderName} ${productName}`,
-      FUnitID: mustRef("单位", unitId),
-      FBaseUnitId: mustRef("基本单位", unitId),
+      FUnitID: mustCode("单位", unitId),
+      FBaseUnitId: mustCode("基本单位", unitId),
       FBaseQty: qty,
-    };
-
-    entries.push(entry);
+    });
   }
 
   const model = {
-    FBillTypeID: mustRef("单据类型", billType),
+    FBillTypeID: mustCode("单据类型", billType),
     FBizType: bizType,
     FTransferDirect: transferDirect,
     FTransferBizType: transferBizType,
-    FStockOutOrgId: mustRef("调出库存组织", fromOrg),
-    FOwnerOutIdHead: mustRef("调出货主", fromOrg),
-    FStockOrgId: mustRef("调入库存组织", toOrg),
-    FOwnerIdHead: mustRef("调入货主", toOrg),
+    FStockOutOrgId: mustCode("调出库存组织", fromOrg),
+    FOwnerOutIdHead: mustCode("调出货主", fromOrg),
+    FStockOrgId: mustCode("调入库存组织", toOrg),
+    FOwnerIdHead: mustCode("调入货主", toOrg),
     FOwnerTypeIdHead: ownerType,
     FOwnerTypeOutIdHead: ownerType,
     FDate: billDate,
@@ -279,7 +270,7 @@ async function main() {
       }
 
       const formId = normalize(process.env.KINGDEE_TRANSFER_FORM_ID || "STK_TransferDirect");
-      const resp = await saveDynamicForm(kingdeeConfig, formId, model);
+      const resp = await saveDynamicForm(kingdeeConfig, formId, model, { verifyBaseDataField: true });
       const parsed = parseSaveResult(resp.data);
       if (!parsed.isSuccess) {
         throw new Error(formatSaveError(resp));
