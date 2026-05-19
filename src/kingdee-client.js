@@ -3,6 +3,7 @@ const crypto = require("crypto");
 /** 金蝶云星空 WebAPI：签名登录（与 LoginBySign 接口约定一致） */
 const LOGIN_BY_SIGN_PATH =
   "Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginBySign.common.kdsvc";
+const SAVE_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Save.common.kdsvc";
 
 /**
  * @param {string} baseUrl 站点根路径，如 https://host/k3cloud/
@@ -31,6 +32,27 @@ function buildLoginBySignHash(p) {
   return crypto.createHash("sha256").update(joined, "utf8").digest("hex");
 }
 
+async function postJson(url, body, headers = {}) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json; charset=utf-8",
+      ...headers,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const rawBody = await res.text();
+  let data = null;
+  try {
+    data = JSON.parse(rawBody);
+  } catch {
+    /* 保留 rawBody */
+  }
+  return { status: res.status, data, rawBody, url, headers: res.headers };
+}
+
 /**
  * 调用 LoginBySign，不在请求中传递用户明文密码。
  *
@@ -42,7 +64,7 @@ function buildLoginBySignHash(p) {
  *   appSecret: string,
  *   lcid?: number|string,
  * }} config
- * @returns {Promise<{ status: number, data: object|null, rawBody: string, url: string }>}
+ * @returns {Promise<{ status: number, data: object|null, rawBody: string, url: string, headers: Headers }>}
  */
 async function loginBySign(config) {
   const base = normalizeKingdeeBaseUrl(config.baseUrl);
@@ -70,23 +92,71 @@ async function loginBySign(config) {
     ],
   };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify(body),
-  });
+  return postJson(url, body);
+}
 
-  const rawBody = await res.text();
-  let data = null;
-  try {
-    data = JSON.parse(rawBody);
-  } catch {
-    /* 保留 rawBody */
+function cookieFromLoginResponse(resp) {
+  const cookie = resp?.headers?.get?.("set-cookie") || "";
+  return cookie
+    .split(/,(?=\s*[^;,]+=)/)
+    .map((part) => part.split(";")[0].trim())
+    .filter(Boolean)
+    .join("; ");
+}
+
+/** 金蝶动态表单 Save。formId 销售订单通常为 SAL_SaleOrder。 */
+async function saveDynamicForm(config, formId, model, options = {}) {
+  const base = normalizeKingdeeBaseUrl(config.baseUrl);
+  if (!base) throw new Error("KINGDEE_BASE_URL 为空");
+  const loginResp = await loginBySign(config);
+  if (!isLoginSuccess(loginResp.data)) {
+    throw new Error(formatKingdeeErrorForConsole(loginResp));
   }
-  return { status: res.status, data, rawBody, url };
+  const cookie = cookieFromLoginResponse(loginResp);
+  const payload = {
+    formid: formId,
+    data: JSON.stringify({
+      NeedUpDateFields: options.needUpdateFields || [],
+      NeedReturnFields: options.needReturnFields || ["FBillNo", "FID"],
+      IsDeleteEntry: true,
+      SubSystemId: "",
+      IsVerifyBaseDataField: false,
+      IsEntryBatchFill: true,
+      ValidateFlag: true,
+      NumberSearch: true,
+      IsAutoAdjustField: false,
+      InterationFlags: "",
+      IgnoreInterationFlag: "",
+      Model: model,
+    }),
+  };
+  return postJson(base + SAVE_PATH, payload, cookie ? { Cookie: cookie } : {});
+}
+
+function parseSaveResult(data) {
+  const result = data?.Result || data?.result || data;
+  const responseStatus = result?.ResponseStatus || result?.responseStatus || {};
+  const isSuccess = Boolean(responseStatus?.IsSuccess ?? responseStatus?.isSuccess);
+  const errors = Array.isArray(responseStatus?.Errors || responseStatus?.errors)
+    ? (responseStatus.Errors || responseStatus.errors)
+    : [];
+  const successMessages = Array.isArray(responseStatus?.SuccessEntitys || responseStatus?.successEntitys)
+    ? (responseStatus.SuccessEntitys || responseStatus.successEntitys)
+    : [];
+  const number = result?.Number || result?.number || successMessages?.[0]?.Number || successMessages?.[0]?.number || "";
+  const id = result?.Id || result?.id || successMessages?.[0]?.Id || successMessages?.[0]?.id || "";
+  return { isSuccess, number, id, errors, result };
+}
+
+function formatSaveError(resp) {
+  const parsed = parseSaveResult(resp?.data);
+  const details = parsed.errors
+    .map((e) => e?.Message || e?.message || e?.FieldName || JSON.stringify(e))
+    .filter(Boolean)
+    .join("；");
+  if (details) return details;
+  if (resp?.data) return JSON.stringify(resp.data);
+  return resp?.rawBody || `HTTP ${resp?.status || ""}`;
 }
 
 /**
@@ -130,10 +200,14 @@ function formatKingdeeErrorForConsole(resp) {
 
 module.exports = {
   LOGIN_BY_SIGN_PATH,
+  SAVE_PATH,
   normalizeKingdeeBaseUrl,
   buildLoginBySignHash,
   loginBySign,
   parseLoginResult,
   isLoginSuccess,
+  saveDynamicForm,
+  parseSaveResult,
+  formatSaveError,
   formatKingdeeErrorForConsole,
 };
