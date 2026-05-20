@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const LOGIN_BY_SIGN_PATH =
   "Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginBySign.common.kdsvc";
 const SAVE_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Save.common.kdsvc";
+const SUBMIT_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc";
 
 /**
  * @param {string} baseUrl 站点根路径，如 https://host/k3cloud/
@@ -104,15 +105,19 @@ function cookieFromLoginResponse(resp) {
     .join("; ");
 }
 
-/** 金蝶动态表单 Save。formId 销售订单通常为 SAL_SaleOrder。 */
-async function saveDynamicForm(config, formId, model, options = {}) {
+async function loginAndGetCookie(config) {
   const base = normalizeKingdeeBaseUrl(config.baseUrl);
   if (!base) throw new Error("KINGDEE_BASE_URL 为空");
   const loginResp = await loginBySign(config);
   if (!isLoginSuccess(loginResp.data)) {
     throw new Error(formatKingdeeErrorForConsole(loginResp));
   }
-  const cookie = cookieFromLoginResponse(loginResp);
+  return { base, cookie: cookieFromLoginResponse(loginResp) };
+}
+
+/** 金蝶动态表单 Save。formId 销售订单通常为 SAL_SaleOrder。 */
+async function saveDynamicForm(config, formId, model, options = {}) {
+  const { base, cookie } = await loginAndGetCookie(config);
   const payload = {
     formid: formId,
     data: JSON.stringify({
@@ -135,6 +140,22 @@ async function saveDynamicForm(config, formId, model, options = {}) {
   return postJson(base + SAVE_PATH, payload, cookie ? { Cookie: cookie } : {});
 }
 
+async function submitDynamicForm(config, formId, idOrNumber, options = {}) {
+  const { base, cookie } = await loginAndGetCookie(config);
+  const id = String(idOrNumber?.id || "").trim();
+  const number = String(idOrNumber?.number || "").trim();
+  const data = {
+    CreateOrgId: options.createOrgId || 0,
+    Numbers: number ? [number] : [],
+    Ids: id,
+    SelectedPostId: options.selectedPostId || 0,
+    NetworkCtrl: options.networkCtrl || "",
+    IgnoreInterationFlag: options.ignoreInterationFlag ?? true,
+  };
+  const payload = { formid: formId, data: JSON.stringify(data) };
+  return postJson(base + SUBMIT_PATH, payload, cookie ? { Cookie: cookie } : {});
+}
+
 function parseSaveResult(data) {
   const result = data?.Result || data?.result || data;
   const responseStatus = result?.ResponseStatus || result?.responseStatus || {};
@@ -148,6 +169,10 @@ function parseSaveResult(data) {
   const number = result?.Number || result?.number || successMessages?.[0]?.Number || successMessages?.[0]?.number || "";
   const id = result?.Id || result?.id || successMessages?.[0]?.Id || successMessages?.[0]?.id || "";
   return { isSuccess, number, id, errors, result };
+}
+
+function parseOperationResult(data) {
+  return parseSaveResult(data);
 }
 
 function formatSaveError(resp) {
@@ -203,13 +228,16 @@ function formatKingdeeErrorForConsole(resp) {
 module.exports = {
   LOGIN_BY_SIGN_PATH,
   SAVE_PATH,
+  SUBMIT_PATH,
   normalizeKingdeeBaseUrl,
   buildLoginBySignHash,
   loginBySign,
   parseLoginResult,
   isLoginSuccess,
   saveDynamicForm,
+  submitDynamicForm,
   parseSaveResult,
+  parseOperationResult,
   formatSaveError,
   formatKingdeeErrorForConsole,
 };
