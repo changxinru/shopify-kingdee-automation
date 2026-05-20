@@ -152,6 +152,10 @@ function stockOrgForSalesOrder(logisticsProvider, sourceStatus) {
   return actualShipStockOrgFromLogisticsProvider(logisticsProvider);
 }
 
+function contactFromRow(headerIndex, row) {
+  return normalize(getByHeader(headerIndex, row, ["联系方式", "联系电话", "电话", "手机号", "手机", "Phone", "phone", "Contact Phone", "contact_phone"], null));
+}
+
 function buildSaleOrderModel(orderName, items, headerIndex) {
   const first = items[0];
   const r0 = first.row;
@@ -162,12 +166,14 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
   const salesOrg = salesOrgFromOwnerOrPaymentMethod(paymentOwner, paymentMethod);
   const logisticsProvider = normalize(getByCol(r0, 20));
   const stockOrg = stockOrgForSalesOrder(logisticsProvider, sourceStatus);
+  const contact = contactFromRow(headerIndex, r0);
   const customerCode = normalize(process.env.KINGDEE_CUSTOMER_CODE || "CUST0042");
   const sellerCode = normalize(process.env.KINGDEE_SELLER_CODE || "");
   const settleOrg = normalize(process.env.KINGDEE_SETTLE_ORG || salesOrg);
   const receiveOrg = normalize(process.env.KINGDEE_RECEIVE_ORG || salesOrg);
   const currency = normalize(process.env.KINGDEE_CURRENCY || "PRE007");
   const saleDept = normalize(process.env.KINGDEE_SALE_DEPT || "");
+  const contactFieldKey = normalize(process.env.KINGDEE_SALE_CONTACT_FIELD || "FLXFS");
   const remarkPrefix = sourceStatus === STATUS_TRANSFER_DONE_WAIT_SALES ? "独立站订单-调拨后销售" : "独立站订单";
   const remark = `${remarkPrefix} ${orderName} ${logisticsProvider}`;
 
@@ -221,6 +227,7 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
     FNote: remark,
   };
 
+  if (contact && contactFieldKey) model[contactFieldKey] = contact;
   if (settleOrg) model.FSettleOrgIds = refNumber(settleOrg);
   if (receiveOrg) model.FReceiveOrgId = refNumber(receiveOrg);
   if (sellerCode) model.FSalerId = refNumber(sellerCode);
