@@ -18,6 +18,7 @@ const SHEET_REF_DEFAULT = "独立站";
 const READ_RANGE_ROWS = 30000;
 
 const STATUS_DIRECT_SALES = "1. 待直接生成销售订单";
+const STATUS_TRANSFER_DONE_WAIT_SALES = "3. 调拨完成待生成销售订单";
 const STATUS_SALES_DONE = "4. 完成保存销售订单";
 const STATUS_FAILED = "5. 同步失败";
 
@@ -140,22 +141,35 @@ function mustRef(field, value) {
   return ref;
 }
 
+function sourceStatusOfItems(items) {
+  return normalize(items?.[0]?.status);
+}
+
+function stockOrgForSalesOrder(logisticsProvider, sourceStatus) {
+  if (sourceStatus === STATUS_TRANSFER_DONE_WAIT_SALES) {
+    return normalize(process.env.KINGDEE_AFTER_TRANSFER_STOCK_ORG || "XGSG");
+  }
+  return actualShipStockOrgFromLogisticsProvider(logisticsProvider);
+}
+
 function buildSaleOrderModel(orderName, items, headerIndex) {
   const first = items[0];
   const r0 = first.row;
+  const sourceStatus = sourceStatusOfItems(items);
   const billDate = normalize(getByCol(r0, 0));
   const paymentMethod = normalize(getByCol(r0, 3));
   const paymentOwner = paymentOwnerFromRow(headerIndex, r0);
   const salesOrg = salesOrgFromOwnerOrPaymentMethod(paymentOwner, paymentMethod);
   const logisticsProvider = normalize(getByCol(r0, 20));
-  const stockOrg = actualShipStockOrgFromLogisticsProvider(logisticsProvider);
+  const stockOrg = stockOrgForSalesOrder(logisticsProvider, sourceStatus);
   const customerCode = normalize(process.env.KINGDEE_CUSTOMER_CODE || "CUST0042");
   const sellerCode = normalize(process.env.KINGDEE_SELLER_CODE || "");
   const settleOrg = normalize(process.env.KINGDEE_SETTLE_ORG || salesOrg);
   const receiveOrg = normalize(process.env.KINGDEE_RECEIVE_ORG || salesOrg);
   const currency = normalize(process.env.KINGDEE_CURRENCY || "PRE007");
   const saleDept = normalize(process.env.KINGDEE_SALE_DEPT || "");
-  const remark = `独立站订单 ${orderName} ${logisticsProvider}`;
+  const remarkPrefix = sourceStatus === STATUS_TRANSFER_DONE_WAIT_SALES ? "独立站订单-调拨后销售" : "独立站订单";
+  const remark = `${remarkPrefix} ${orderName} ${logisticsProvider}`;
 
   const entries = [];
   for (const item of items) {
@@ -186,7 +200,13 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
   if (!orderName) missing.push("缺少订单号(B列)");
   if (!billDate) missing.push("缺少日期(A列)");
   if (!salesOrg) missing.push("无法识别销售组织（D列付款方式/收款账户）");
-  if (!stockOrg) missing.push("无法从 U 列物流商识别库存组织");
+  if (!stockOrg) {
+    if (sourceStatus === STATUS_TRANSFER_DONE_WAIT_SALES) {
+      missing.push("缺少调拨后销售订单库存组织 KINGDEE_AFTER_TRANSFER_STOCK_ORG");
+    } else {
+      missing.push("无法从 U 列物流商识别库存组织");
+    }
+  }
   if (!customerCode) missing.push("缺少客户编码 KINGDEE_CUSTOMER_CODE");
   if (missing.length) throw new Error(missing.join("；"));
 
@@ -218,6 +238,10 @@ function buildStatusUpdates(sheetRef, rowNumbers, status, resultText) {
   return updates;
 }
 
+function isSalesCandidateStatus(status) {
+  return status === STATUS_DIRECT_SALES || status === STATUS_TRANSFER_DONE_WAIT_SALES;
+}
+
 async function main() {
   loadEnv();
   checkFeishuEnv();
@@ -235,12 +259,16 @@ async function main() {
   const headerIndex = buildHeaderIndex(header);
 
   const candidates = [];
+  let directRows = 0;
+  let afterTransferRows = 0;
   for (let i = 0; i < rows.length; i++) {
     const rowNumber = i + 2;
     const row = rows[i];
     const status = normalize(getByCol(row, COL_V_STATUS - 1));
-    if (status !== STATUS_DIRECT_SALES) continue;
-    candidates.push({ rowNumber, row });
+    if (!isSalesCandidateStatus(status)) continue;
+    if (status === STATUS_DIRECT_SALES) directRows += 1;
+    if (status === STATUS_TRANSFER_DONE_WAIT_SALES) afterTransferRows += 1;
+    candidates.push({ rowNumber, row, status });
   }
 
   const groups = new Map();
@@ -259,6 +287,7 @@ async function main() {
 
   for (const [orderName, items] of groups.entries()) {
     const rowNumbers = items.map((x) => x.rowNumber);
+    const sourceStatus = sourceStatusOfItems(items);
     try {
       const model = buildSaleOrderModel(orderName, items, headerIndex);
       fs.writeFileSync(
@@ -269,8 +298,8 @@ async function main() {
 
       if (isDryRun()) {
         const msg = "DRY_RUN=true，已生成金蝶销售订单 JSON，未调用 Save";
-        allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, STATUS_DIRECT_SALES, msg));
-        results.push({ orderName, ok: true, dryRun: true, rowNumbers, message: msg });
+        allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, sourceStatus, msg));
+        results.push({ orderName, ok: true, dryRun: true, sourceStatus, rowNumbers, message: msg });
         continue;
       }
 
@@ -282,12 +311,12 @@ async function main() {
       const billNo = parsed.number || parsed.id || "已保存";
       const msg = `金蝶销售订单已保存：${billNo}`;
       allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, STATUS_SALES_DONE, msg));
-      results.push({ orderName, ok: true, billNo, rowNumbers });
+      results.push({ orderName, ok: true, sourceStatus, billNo, rowNumbers });
       successOrders += 1;
     } catch (error) {
       const msg = error?.message || String(error);
       allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, STATUS_FAILED, msg));
-      results.push({ orderName, ok: false, rowNumbers, error: msg });
+      results.push({ orderName, ok: false, sourceStatus, rowNumbers, error: msg });
       failedOrders += 1;
     }
   }
@@ -298,7 +327,8 @@ async function main() {
     await batchUpdateValues(feishuToken, spreadsheetToken, allUpdates);
   }
 
-  console.log(`V列待直接生成销售订单行数：${candidates.length}`);
+  console.log(`V列待直接生成销售订单行数：${directRows}`);
+  console.log(`V列调拨完成待生成销售订单行数：${afterTransferRows}`);
   console.log(`实际处理行数：${candidates.length}`);
   console.log(`实际处理订单数：${groups.size}`);
   console.log(`成功订单数：${successOrders}`);
