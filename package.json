@@ -9,6 +9,7 @@
     "kingdee:direct-sales": "node src/create-direct-sales-orders-from-feishu.js",
     "kingdee:transfer": "node src/create-transfer-orders-from-feishu.js",
     "kingdee:transfer-then-sales": "node src/run-kingdee-transfer-then-sales.js",
+    "kingdee:ui": "node src/kingdee-ui.js",
     "test:shopify": "node src/test-shopify.js",
     "test:kingdee": "node src/test-kingdee.js"
   },
