@@ -157,6 +157,11 @@ function contactFromRow(headerIndex, row) {
   return normalize(getByHeader(headerIndex, row, ["联系方式", "联系电话", "电话", "手机号", "手机", "Phone", "phone", "Contact Phone", "contact_phone"], null));
 }
 
+function firstEntryContact(model) {
+  const key = normalize(process.env.KINGDEE_SALE_CONTACT_ENTRY_FIELD || process.env.KINGDEE_SALE_CONTACT_FIELD || "FDZ");
+  return normalize(model?.FSaleOrderEntry?.[0]?.[key]);
+}
+
 function buildSaleOrderModel(orderName, items, headerIndex) {
   const first = items[0];
   const r0 = first.row;
@@ -174,7 +179,7 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
   const receiveOrg = normalize(process.env.KINGDEE_RECEIVE_ORG || salesOrg);
   const currency = normalize(process.env.KINGDEE_CURRENCY || "PRE007");
   const saleDept = normalize(process.env.KINGDEE_SALE_DEPT || "");
-  const contactFieldKey = normalize(process.env.KINGDEE_SALE_CONTACT_FIELD || "FLXFS");
+  const contactEntryFieldKey = normalize(process.env.KINGDEE_SALE_CONTACT_ENTRY_FIELD || process.env.KINGDEE_SALE_CONTACT_FIELD || "FDZ");
   const remarkPrefix = sourceStatus === STATUS_TRANSFER_DONE_WAIT_SALES ? "独立站订单-调拨后销售" : "独立站订单";
   const remark = `${remarkPrefix} ${orderName} ${logisticsProvider}`;
 
@@ -192,7 +197,7 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
     if (!Number.isFinite(taxPrice)) missing.push(`第 ${rowNo} 行缺少单价(E列)`);
     if (missing.length) throw new Error(missing.join("；"));
 
-    entries.push({
+    const entry = {
       FMaterialId: mustRef("物料编码", materialCode),
       FQty: qty,
       FPrice: taxPrice,
@@ -200,7 +205,9 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
       FEntryTaxRate: Number(process.env.KINGDEE_TAX_RATE || 0),
       FDeliveryDate: deliveryDate,
       FStockOrgId: mustRef("库存组织", stockOrg),
-    });
+    };
+    if (contact && contactEntryFieldKey) entry[contactEntryFieldKey] = contact;
+    entries.push(entry);
   }
 
   const missing = [];
@@ -228,7 +235,6 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
     FNote: remark,
   };
 
-  if (contact && contactFieldKey) model[contactFieldKey] = contact;
   if (settleOrg) model.FSettleOrgIds = refNumber(settleOrg);
   if (receiveOrg) model.FReceiveOrgId = refNumber(receiveOrg);
   if (sellerCode) model.FSalerId = refNumber(sellerCode);
@@ -307,7 +313,7 @@ async function main() {
       if (isDryRun()) {
         const msg = "DRY_RUN=true，已生成金蝶销售订单 JSON，未调用 Save";
         allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, sourceStatus, msg));
-        results.push({ orderName, ok: true, dryRun: true, sourceStatus, rowNumbers, contact: model[normalize(process.env.KINGDEE_SALE_CONTACT_FIELD || "FLXFS")] || "", message: msg });
+        results.push({ orderName, ok: true, dryRun: true, sourceStatus, rowNumbers, contact: firstEntryContact(model), message: msg });
         continue;
       }
 
@@ -319,7 +325,7 @@ async function main() {
       const billNo = parsed.number || parsed.id || "已保存";
       const msg = `金蝶销售订单已保存：${billNo}`;
       allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, STATUS_SALES_DONE, msg));
-      results.push({ orderName, ok: true, sourceStatus, billNo, contact: model[normalize(process.env.KINGDEE_SALE_CONTACT_FIELD || "FLXFS")] || "", rowNumbers });
+      results.push({ orderName, ok: true, sourceStatus, billNo, contact: firstEntryContact(model), rowNumbers });
       successOrders += 1;
     } catch (error) {
       const msg = error?.message || String(error);
