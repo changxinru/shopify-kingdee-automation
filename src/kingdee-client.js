@@ -5,6 +5,7 @@ const LOGIN_BY_SIGN_PATH =
   "Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginBySign.common.kdsvc";
 const SAVE_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Save.common.kdsvc";
 const SUBMIT_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc";
+const AUDIT_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Audit.common.kdsvc";
 
 /**
  * @param {string} baseUrl 站点根路径，如 https://host/k3cloud/
@@ -16,13 +17,6 @@ function normalizeKingdeeBaseUrl(baseUrl) {
   return s.replace(/\/+$/, "") + "/";
 }
 
-/**
- * AppId + AppSecret + 时间戳的 SHA256（hex），参与排序的字段与官方示例一致：
- * [acctId, username, appId, appSecret, timestamp] 按 UTF-8 字节字典序排序后拼接，再 SHA256（与
- * github.com/deep-project/kingdee 中 LoginBySign 实现一致）。
- *
- * @param {{ acctId: string, username: string, appId: string, appSecret: string, timestampSec: number|string }} p
- */
 function buildLoginBySignHash(p) {
   const ts = String(p.timestampSec);
   const parts = [p.acctId, p.username, p.appId, p.appSecret, ts].map(String);
@@ -54,19 +48,6 @@ async function postJson(url, body, headers = {}) {
   return { status: res.status, data, rawBody, url, headers: res.headers };
 }
 
-/**
- * 调用 LoginBySign，不在请求中传递用户明文密码。
- *
- * @param {{
- *   baseUrl: string,
- *   acctId: string,
- *   username: string,
- *   appId: string,
- *   appSecret: string,
- *   lcid?: number|string,
- * }} config
- * @returns {Promise<{ status: number, data: object|null, rawBody: string, url: string, headers: Headers }>}
- */
 async function loginBySign(config) {
   const base = normalizeKingdeeBaseUrl(config.baseUrl);
   if (!base) {
@@ -115,7 +96,6 @@ async function loginAndGetCookie(config) {
   return { base, cookie: cookieFromLoginResponse(loginResp) };
 }
 
-/** 金蝶动态表单 Save。formId 销售订单通常为 SAL_SaleOrder。 */
 async function saveDynamicForm(config, formId, model, options = {}) {
   const { base, cookie } = await loginAndGetCookie(config);
   const payload = {
@@ -141,6 +121,14 @@ async function saveDynamicForm(config, formId, model, options = {}) {
 }
 
 async function submitDynamicForm(config, formId, idOrNumber, options = {}) {
+  return operateDynamicForm(config, SUBMIT_PATH, formId, idOrNumber, options);
+}
+
+async function auditDynamicForm(config, formId, idOrNumber, options = {}) {
+  return operateDynamicForm(config, AUDIT_PATH, formId, idOrNumber, options);
+}
+
+async function operateDynamicForm(config, path, formId, idOrNumber, options = {}) {
   const { base, cookie } = await loginAndGetCookie(config);
   const id = String(idOrNumber?.id || "").trim();
   const number = String(idOrNumber?.number || "").trim();
@@ -153,7 +141,7 @@ async function submitDynamicForm(config, formId, idOrNumber, options = {}) {
     IgnoreInterationFlag: options.ignoreInterationFlag ?? true,
   };
   const payload = { formid: formId, data: JSON.stringify(data) };
-  return postJson(base + SUBMIT_PATH, payload, cookie ? { Cookie: cookie } : {});
+  return postJson(base + path, payload, cookie ? { Cookie: cookie } : {});
 }
 
 function parseSaveResult(data) {
@@ -186,10 +174,6 @@ function formatSaveError(resp) {
   return resp?.rawBody || `HTTP ${resp?.status || ""}`;
 }
 
-/**
- * @param {object|null} data
- * @returns {{ resultType: number|null, message: string }}
- */
 function parseLoginResult(data) {
   if (!data || typeof data !== "object") {
     return { resultType: null, message: "" };
@@ -208,11 +192,6 @@ function isLoginSuccess(data) {
   return resultType === 1;
 }
 
-/**
- * 用于失败输出：金蝶返回的完整信息（不打印 appSecret）。
- *
- * @param {{ status: number, data: object|null, rawBody: string, url: string }} resp
- */
 function formatKingdeeErrorForConsole(resp) {
   const lines = [];
   lines.push(`HTTP ${resp.status}`);
@@ -229,6 +208,7 @@ module.exports = {
   LOGIN_BY_SIGN_PATH,
   SAVE_PATH,
   SUBMIT_PATH,
+  AUDIT_PATH,
   normalizeKingdeeBaseUrl,
   buildLoginBySignHash,
   loginBySign,
@@ -236,6 +216,7 @@ module.exports = {
   isLoginSuccess,
   saveDynamicForm,
   submitDynamicForm,
+  auditDynamicForm,
   parseSaveResult,
   parseOperationResult,
   formatSaveError,
