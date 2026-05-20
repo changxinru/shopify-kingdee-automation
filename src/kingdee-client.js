@@ -5,6 +5,7 @@ const LOGIN_BY_SIGN_PATH =
   "Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginBySign.common.kdsvc";
 const SAVE_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Save.common.kdsvc";
 const SUBMIT_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc";
+const AUDIT_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Audit.common.kdsvc";
 
 function normalizeKingdeeBaseUrl(baseUrl) {
   const s = String(baseUrl ?? "").trim();
@@ -116,6 +117,10 @@ async function submitDynamicForm(config, formId, idOrNumber, options = {}) {
   return operateDynamicForm(config, SUBMIT_PATH, formId, idOrNumber, options);
 }
 
+async function auditDynamicForm(config, formId, idOrNumber, options = {}) {
+  return operateDynamicForm(config, AUDIT_PATH, formId, idOrNumber, options);
+}
+
 async function operateDynamicForm(config, path, formId, idOrNumber, options = {}) {
   const { base, cookie } = await loginAndGetCookie(config);
   const id = String(idOrNumber?.id || "").trim();
@@ -196,6 +201,7 @@ module.exports = {
   LOGIN_BY_SIGN_PATH,
   SAVE_PATH,
   SUBMIT_PATH,
+  AUDIT_PATH,
   normalizeKingdeeBaseUrl,
   buildLoginBySignHash,
   loginBySign,
@@ -203,6 +209,7 @@ module.exports = {
   isLoginSuccess,
   saveDynamicForm,
   submitDynamicForm,
+  auditDynamicForm,
   parseSaveResult,
   parseOperationResult,
   formatSaveError,
