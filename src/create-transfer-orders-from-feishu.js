@@ -4,7 +4,13 @@ const path = require("path");
 const { loadEnv, getProjectRoot } = require("./lib/env");
 const { getTenantAccessToken, getSpreadsheetTokenFromWiki } = require("./feishu-client");
 const { readSheetValues, batchUpdateValues } = require("./lib/feishu-sheets");
-const { saveDynamicForm, parseSaveResult, formatSaveError } = require("./kingdee-client");
+const {
+  saveDynamicForm,
+  submitDynamicForm,
+  parseSaveResult,
+  parseOperationResult,
+  formatSaveError,
+} = require("./kingdee-client");
 
 const OUTPUT_DIR = path.join(getProjectRoot(), "output");
 const SHEET_REF_DEFAULT = "独立站";
@@ -238,24 +244,29 @@ async function main() {
       fs.writeFileSync(path.join(OUTPUT_DIR, `kingdee-transfer-${orderName.replace(/[^a-zA-Z0-9_-]/g, "") || "order"}.json`), JSON.stringify(model, null, 2), "utf-8");
 
       if (isDryRun()) {
-        results.push({ orderName, ok: true, dryRun: true, rowNumbers, message: "DRY_RUN=true，已生成金蝶调拨单 JSON，未调用 Save" });
+        results.push({ orderName, ok: true, dryRun: true, rowNumbers, message: "DRY_RUN=true，已生成金蝶调拨单 JSON，未调用 Save/Submit" });
         continue;
       }
 
       const formId = normalize(process.env.KINGDEE_TRANSFER_FORM_ID || "STK_TransferDirect");
-      const resp = await saveDynamicForm(kingdeeConfig, formId, model, {
+      const saveResp = await saveDynamicForm(kingdeeConfig, formId, model, {
         verifyBaseDataField: false,
         autoAdjustField: true,
         ignoreInterationFlag: true,
         isControlPrecision: false,
         validateRepeatJson: false,
       });
-      const parsed = parseSaveResult(resp.data);
-      if (!parsed.isSuccess) throw new Error(formatSaveError(resp));
-      const billNo = parsed.number || parsed.id || "已保存";
-      const msg = `金蝶调拨单已保存：${billNo}`;
+      const saved = parseSaveResult(saveResp.data);
+      if (!saved.isSuccess) throw new Error(formatSaveError(saveResp));
+
+      const submitResp = await submitDynamicForm(kingdeeConfig, formId, { id: saved.id, number: saved.number }, { ignoreInterationFlag: true });
+      const submitted = parseOperationResult(submitResp.data);
+      if (!submitted.isSuccess) throw new Error(`调拨单已保存但提交失败：${formatSaveError(submitResp)}`);
+
+      const billNo = submitted.number || saved.number || submitted.id || saved.id || "已保存并提交";
+      const msg = `金蝶调拨单已保存并提交：${billNo}`;
       allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, STATUS_TRANSFER_DONE_WAIT_SALES, msg));
-      results.push({ orderName, ok: true, billNo, rowNumbers });
+      results.push({ orderName, ok: true, billNo, saveId: saved.id, submitId: submitted.id, rowNumbers });
       successOrders += 1;
     } catch (error) {
       const msg = error?.message || String(error);
@@ -272,7 +283,7 @@ async function main() {
   console.log(`实际处理订单数：${groups.size}`);
   console.log(`成功订单数：${successOrders}`);
   console.log(`失败订单数：${failedOrders}`);
-  if (isDryRun()) console.log("DRY_RUN=true，未调用金蝶 Save，未回写飞书状态。");
+  if (isDryRun()) console.log("DRY_RUN=true，未调用金蝶 Save/Submit，未回写飞书状态。");
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
