@@ -5,12 +5,7 @@ const LOGIN_BY_SIGN_PATH =
   "Kingdee.BOS.WebApi.ServicesStub.AuthService.LoginBySign.common.kdsvc";
 const SAVE_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Save.common.kdsvc";
 const SUBMIT_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Submit.common.kdsvc";
-const AUDIT_PATH = "Kingdee.BOS.WebApi.ServicesStub.DynamicFormService.Audit.common.kdsvc";
 
-/**
- * @param {string} baseUrl 站点根路径，如 https://host/k3cloud/
- * @returns {string} 以 / 结尾的基址
- */
 function normalizeKingdeeBaseUrl(baseUrl) {
   const s = String(baseUrl ?? "").trim();
   if (!s) return "";
@@ -50,9 +45,7 @@ async function postJson(url, body, headers = {}) {
 
 async function loginBySign(config) {
   const base = normalizeKingdeeBaseUrl(config.baseUrl);
-  if (!base) {
-    throw new Error("KINGDEE_BASE_URL 为空");
-  }
+  if (!base) throw new Error("KINGDEE_BASE_URL 为空");
   const url = base + LOGIN_BY_SIGN_PATH;
   const timestampSec = Math.floor(Date.now() / 1000);
   const sign = buildLoginBySignHash({
@@ -73,7 +66,6 @@ async function loginBySign(config) {
       lcid,
     ],
   };
-
   return postJson(url, body);
 }
 
@@ -122,10 +114,6 @@ async function saveDynamicForm(config, formId, model, options = {}) {
 
 async function submitDynamicForm(config, formId, idOrNumber, options = {}) {
   return operateDynamicForm(config, SUBMIT_PATH, formId, idOrNumber, options);
-}
-
-async function auditDynamicForm(config, formId, idOrNumber, options = {}) {
-  return operateDynamicForm(config, AUDIT_PATH, formId, idOrNumber, options);
 }
 
 async function operateDynamicForm(config, path, formId, idOrNumber, options = {}) {
@@ -208,7 +196,6 @@ module.exports = {
   LOGIN_BY_SIGN_PATH,
   SAVE_PATH,
   SUBMIT_PATH,
-  AUDIT_PATH,
   normalizeKingdeeBaseUrl,
   buildLoginBySignHash,
   loginBySign,
@@ -216,7 +203,6 @@ module.exports = {
   isLoginSuccess,
   saveDynamicForm,
   submitDynamicForm,
-  auditDynamicForm,
   parseSaveResult,
   parseOperationResult,
   formatSaveError,
