@@ -16,6 +16,7 @@ const {
 const OUTPUT_DIR = path.join(getProjectRoot(), "output");
 const SHEET_REF_DEFAULT = "独立站";
 const READ_RANGE_ROWS = 30000;
+const READ_RANGE_COL_END = "AZ";
 
 const STATUS_DIRECT_SALES = "1. 待直接生成销售订单";
 const STATUS_TRANSFER_DONE_WAIT_SALES = "3. 调拨完成待生成销售订单";
@@ -260,7 +261,7 @@ async function main() {
   let spreadsheetToken = envSpreadsheetToken;
   if (!spreadsheetToken) spreadsheetToken = await getSpreadsheetTokenFromWiki(wikiToken, feishuToken);
 
-  const values = await readSheetValues(feishuToken, spreadsheetToken, `${sheetRef}!A1:W${READ_RANGE_ROWS}`, { valueRenderOption: "FormattedValue" });
+  const values = await readSheetValues(feishuToken, spreadsheetToken, `${sheetRef}!A1:${READ_RANGE_COL_END}${READ_RANGE_ROWS}`, { valueRenderOption: "FormattedValue" });
   const header = values?.[0] || [];
   const rows = values.slice(1);
   const headerIndex = buildHeaderIndex(header);
@@ -306,7 +307,7 @@ async function main() {
       if (isDryRun()) {
         const msg = "DRY_RUN=true，已生成金蝶销售订单 JSON，未调用 Save";
         allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, sourceStatus, msg));
-        results.push({ orderName, ok: true, dryRun: true, sourceStatus, rowNumbers, message: msg });
+        results.push({ orderName, ok: true, dryRun: true, sourceStatus, rowNumbers, contact: model[normalize(process.env.KINGDEE_SALE_CONTACT_FIELD || "FLXFS")] || "", message: msg });
         continue;
       }
 
@@ -318,7 +319,7 @@ async function main() {
       const billNo = parsed.number || parsed.id || "已保存";
       const msg = `金蝶销售订单已保存：${billNo}`;
       allUpdates.push(...buildStatusUpdates(sheetRef, rowNumbers, STATUS_SALES_DONE, msg));
-      results.push({ orderName, ok: true, sourceStatus, billNo, rowNumbers });
+      results.push({ orderName, ok: true, sourceStatus, billNo, contact: model[normalize(process.env.KINGDEE_SALE_CONTACT_FIELD || "FLXFS")] || "", rowNumbers });
       successOrders += 1;
     } catch (error) {
       const msg = error?.message || String(error);
