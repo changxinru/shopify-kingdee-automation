@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { loadEnv, getProjectRoot } = require("./lib/env");
-const { getTenantAccessToken, getSpreadsheetTokenFromWiki } = require("./feishu-client");
+const { getTenantAccessToken, getSpreadsheetTokenFromWiki, logFullError } = require("./feishu-client");
 const {
   readSheetValues,
   batchUpdateValues,
@@ -35,6 +35,18 @@ const SYNC_STATUS_NEED_TRANSFER_FIRST = "2. 待先生成调拨单";
 const SYNC_STATUS_TRANSFER_DONE_WAIT_SALES = "3. 调拨完成待生成销售订单";
 const SYNC_STATUS_SALES_SAVED = "4. 完成保存销售订单";
 const SYNC_STATUS_FAILED = "5. 同步失败";
+
+function printFullError(prefix, error) {
+  if (typeof logFullError === "function") {
+    logFullError(prefix, error);
+    return;
+  }
+  console.error(prefix);
+  console.error("error:", error);
+  console.error("error.message:", error?.message);
+  console.error("error.cause:", error?.cause);
+  console.error("error.stack:", error?.stack);
+}
 
 function isDryRun() {
   return String(process.env.DRY_RUN ?? "").trim().toLowerCase() === "true";
@@ -142,7 +154,7 @@ async function appendGtRowsFromTemplateLegacy(feishuToken, spreadsheetToken, she
   try {
     rows = await readSheetValues(feishuToken, spreadsheetToken, range, { valueRenderOption: "Formula" });
   } catch (e) {
-    console.error("读取模板行 G:T 失败，跳过公式复制：", e.message || e);
+    printFullError("读取模板行 G:T 失败，跳过公式复制", e);
     return;
   }
   const templateCells = rows[0] || [];
@@ -157,7 +169,7 @@ async function appendGtRowsFromTemplateLegacy(feishuToken, spreadsheetToken, she
       { range: `${sheetRef}!G${startRow}:T${endRow}`, values: out },
     ], "legacy formula write");
   } catch (e) {
-    console.error("写入 G:T 失败：", e.message || e);
+    printFullError("写入 G:T 失败", e);
   }
 }
 
@@ -341,7 +353,7 @@ async function tryHighlightAppendRows(feishuToken, spreadsheetToken, sheetRef, s
     }
     await appendRangeBackgroundColor(feishuToken, spreadsheetToken, sheetId, startRow, endRow, FEISHU_NEW_ROW_HIGHLIGHT_COLOR);
   } catch (error) {
-    console.warn(`新增行标黄失败：${error?.message || String(error)}`);
+    printFullError("新增行标黄失败", error);
   }
 }
 
@@ -387,7 +399,7 @@ async function tryMergeLogisticsProviderForNewRows(feishuToken, spreadsheetToken
       }
     }
   } catch (error) {
-    console.warn(`同订单号物流商合并失败：${error?.message || String(error)}`);
+    printFullError("同订单号物流商合并失败", error);
   }
 }
 
@@ -435,18 +447,22 @@ async function main() {
 
   const maps = await loadMappingTables();
 
+  console.log("[Sync Step] 获取飞书 tenant_access_token");
   const feishuToken = await getTenantAccessToken(appId, appSecret);
 
   let spreadsheetToken = envSpreadsheetToken;
   if (spreadsheetToken) {
-    console.log("使用 FEISHU_SPREADSHEET_TOKEN");
+    console.log("[Sync Step] 使用 FEISHU_SPREADSHEET_TOKEN");
   } else {
+    console.log("[Sync Step] 使用 Wiki token 解析飞书表格 token");
     spreadsheetToken = await getSpreadsheetTokenFromWiki(wikiToken, feishuToken);
     console.log("使用 Wiki token 解析飞书表格 token 成功");
   }
 
   const bRange = `${sheetRef}!B1:B${FEISHU_B_RANGE_ROWS}`;
+  console.log(`[Sync Step] 读取飞书表格 B 列已有订单：${bRange}`);
   const bValues = await readSheetValues(feishuToken, spreadsheetToken, bRange);
+  console.log(`[Sync Step] 读取飞书表格 B 列成功，行数：${bValues.length}`);
   const existingOrderKeys = collectExistingOrderNames(bValues);
   const feishuExistingOrderCount = existingOrderKeys.size;
 
@@ -458,7 +474,7 @@ async function main() {
       console.error("请求 Shopify API 超时");
       process.exit(1);
     }
-    console.error(err.message || err);
+    printFullError("Shopify API 请求失败", err);
     process.exit(1);
   }
 
@@ -574,6 +590,7 @@ async function main() {
     }
   } catch (error) {
     summary.failed += newRowCount;
+    printFullError("写入飞书新增行流程失败", error);
     summary.failures.push({ scope: "new_append", error: error?.message || String(error) });
     process.exitCode = 1;
   }
@@ -584,7 +601,7 @@ async function main() {
 
 if (require.main === module) {
   main().catch((e) => {
-    console.error(e);
+    printFullError("sync.js 顶层异常", e);
     process.exit(1);
   });
 }
