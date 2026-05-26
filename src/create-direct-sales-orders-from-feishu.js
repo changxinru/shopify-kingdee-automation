@@ -172,7 +172,6 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
   const salesOrg = salesOrgFromOwnerOrPaymentMethod(paymentOwner, paymentMethod);
   const logisticsProvider = normalize(getByCol(r0, 20));
   const stockOrg = stockOrgForSalesOrder(logisticsProvider, sourceStatus);
-  const contact = contactFromRow(headerIndex, r0);
   const customerCode = normalize(process.env.KINGDEE_CUSTOMER_CODE || "CUST0042");
   const sellerCode = normalize(process.env.KINGDEE_SELLER_CODE || "");
   const settleOrg = normalize(process.env.KINGDEE_SETTLE_ORG || salesOrg);
@@ -191,6 +190,7 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
     const qty = toNumber(getByCol(r, 5));
     const taxPrice = toNumber(getByCol(r, 4));
     const deliveryDate = normalize(getByCol(r, 11)) || billDate;
+    const rowContact = contactFromRow(headerIndex, r);
     const missing = [];
     if (!materialCode) missing.push(`第 ${rowNo} 行缺少物料编码(H列)`);
     if (!Number.isFinite(qty) || qty <= 0) missing.push(`第 ${rowNo} 行缺少数量(F列)`);
@@ -206,7 +206,7 @@ function buildSaleOrderModel(orderName, items, headerIndex) {
       FDeliveryDate: deliveryDate,
       FStockOrgId: mustRef("库存组织", stockOrg),
     };
-    if (contact && contactEntryFieldKey) entry[contactEntryFieldKey] = contact;
+    if (rowContact && contactEntryFieldKey) entry[contactEntryFieldKey] = rowContact;
     entries.push(entry);
   }
 
