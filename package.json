@@ -7,7 +7,8 @@
     "sync": "node src/sync.js",
     "prepare:kingdee": "node src/prepare-kingdee-from-feishu.js",
     "test:shopify": "node src/test-shopify.js",
-    "test:kingdee": "node src/test-kingdee.js"
+    "test:kingdee": "node src/test-kingdee.js",
+    "push:delivery": "node src/push-delivery.js"
   },
   "dependencies": {
     "csv-parser": "latest",
